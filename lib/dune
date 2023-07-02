@@ -1,0 +1,3 @@
+(library
+ (name huffman)
+ (libraries bitv))
