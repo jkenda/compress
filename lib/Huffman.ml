@@ -1,3 +1,5 @@
+open Tools
+
 type 'a node =
     | Leaf of int * 'a
     | Node of int * 'a node * 'a node
@@ -58,16 +60,13 @@ let huffman freqs =
 let encode message =
     (* calculate frequencies of characters *)
     let freqs string =
-        let insert list char =
-            let rec aux = function
-                | [] -> [(char, ref 1)]
-                | (ch, cnt) :: _ as ls when ch = char -> cnt := !cnt + 1; ls
-                | hd :: tl -> hd :: aux tl
-            in
-            aux list
+        let array = Array.make 256 0 in
+        let _ = Bytes.iter (fun c -> array.(Char.code c) <- array.(Char.code c) + 1) string in
+        let rec aux acc = function
+            | -1 -> acc
+            | n -> aux (if array.(n) > 0 then (Char.chr n, array.(n)) :: acc else acc) (n - 1)
         in
-        Bytes.fold_left insert [] string
-        |> List.map (fun (ch, cnt) -> (ch, !cnt))
+        aux [] 255
     in
     (* put most common characters first *)
     let sort =
@@ -81,7 +80,7 @@ let encode message =
     let to_code huffman =
         let add_code char =
             let add_bit c =
-                Bitv.unsafe_set out_buffer !i (c = '1');
+                Bitv.set out_buffer !i (c = '1');
                 i := !i + 1 
             in
             let rec aux = function
@@ -96,11 +95,11 @@ let encode message =
     in
 
     let huffman = message
-                |> freqs
-                |> huffman
-                |> sort
+                |> time "encode.freqs" freqs
+                |> time "encode.huffman" huffman
+                |> time "encode.sort" sort
     in
-    (huffman, to_code huffman)
+    (huffman, time "encode.to_code" to_code huffman)
 
 (* decode huffman encoded message *)
 let decode (dict, (bytes, len)) =

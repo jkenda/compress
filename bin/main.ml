@@ -1,4 +1,4 @@
-open Huffman;;
+open Huffman
 
 let read_whole_file filename =
     (* open_in_bin works correctly on Unix and Windows *)
