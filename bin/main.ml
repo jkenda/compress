@@ -35,11 +35,11 @@ let bytes_to_huffman_encoded bytes =
     List.iter (fun (ch, code) -> 
         Buffer.add_char buffer ch;
         Buffer.add_uint8 buffer (String.length code);
-        Buffer.add_int32_ne buffer (bytes_to_int code)) dict;
+        Buffer.add_int32_be buffer (bytes_to_int code)) dict;
     (* add a NULL char as a separator *)
     Buffer.add_char buffer (Char.chr 0);
     (* add length in bits *)
-    Buffer.add_int32_ne buffer (Int32.of_int len);
+    Buffer.add_int32_be buffer (Int32.of_int len);
     (* add encoded text *)
     Buffer.add_bytes buffer bytes;
     Buffer.to_bytes buffer
@@ -52,16 +52,13 @@ let huffman_encoded_to_bytes bytes =
         in aux 0 0
     in
     let rec build_code dict i =
-        print_int i; print_char '\n';
-
         let int_to_bit_str num len =
             let rec aux acc num len =
                 match num, len with
-                | 0, 0 -> acc
+                | 0, _ when len <= 0 -> acc
                 | 0, _ -> aux ("0" ^ acc) 0 (len - 1)
                 | _, _ ->
                         let digit = Char.escaped (Char.chr (num mod 2 + Char.code '0')) in
-                        let _ = print_string digit in
                         aux (digit ^ acc) (num / 2) (len - 1)
             in
             aux "" num len
@@ -69,12 +66,11 @@ let huffman_encoded_to_bytes bytes =
 
         let byte = Bytes.get bytes i in
         match byte, Char.code byte with
-        | _, 0 -> print_char '\n'; i + 1, dict
+        | _, 0 -> i + 1, dict
         | char, _ ->
                 let len = Char.code (Bytes.get bytes (i + 1)) in
                 let i, code = get_int (i + 2) in
                 let code = int_to_bit_str code len in
-                Format.printf "(%s, %s);\n" (Char.escaped char) code;
                 build_code ((char, code) :: dict) i
     in
 
@@ -82,7 +78,6 @@ let huffman_encoded_to_bytes bytes =
     let i, len = get_int i in
     let dict = List.rev dict in
 
-    print_int ((Bytes.length bytes - i) * 8); print_newline ();
     let bytes = Bytes.sub bytes i (Bytes.length bytes - i) in
     decode (dict, (bytes, len)) |> String.to_bytes
 
