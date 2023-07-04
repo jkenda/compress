@@ -8,6 +8,9 @@ let freq = function
     | Leaf (fr, _)
     | Node (fr, _, _) -> fr
 
+let int_to_bitv num len =
+    Bitv.init len (fun i -> num lsr i mod 2 = 1)
+
 let huffman freqs =
     (* sort list of (char, freq) in ascending order *)
     let sort =
@@ -43,11 +46,14 @@ let huffman freqs =
     in
     (* transform tree to list of huffman codes *)
     let to_huffman nodes =
-        let rec aux code = function
-            | Leaf (_, ch) -> [(ch, code)]
-            | Node (_, lc, rc) -> aux (code ^ "0") lc @ aux (code ^ "1") rc
+        let int_to_bitv num len =
+            Bitv.init len (fun i -> num lsr i mod 2 = 1)
         in
-        aux "" nodes
+        let rec aux len code = function
+            | Leaf (_, ch) -> [ch, int_to_bitv code len]
+            | Node (_, lc, rc) -> aux (len + 1) (code * 2 + 0) lc @ aux (len + 1) (code * 2 + 1) rc
+        in
+        aux 0 0 nodes
     in
 
     freqs
@@ -71,7 +77,7 @@ let encode message =
     (* put most common characters first *)
     let sort =
         List.sort
-        (fun (_, c1) (_, c2) -> String.length c1 - String.length c2)
+        (fun (_, c1) (_, c2) -> Bitv.length c1 - Bitv.length c2)
     in
     (* buffer for building strings *)
     let out_buffer = Bitv.create (Bytes.length message * 8) false in
@@ -79,12 +85,11 @@ let encode message =
     (* encode mesage with huffman *)
     let to_code huffman =
         let add_code char =
-            let add_bit c =
-                Bitv.set out_buffer !i (c = '1');
-                i := !i + 1 
-            in
             let rec aux = function
-                | (ch, code) :: _ when ch = char -> String.iter add_bit code
+                | (ch, code) :: _ when ch = char ->
+                        let len = Bitv.length code in
+                        Bitv.blit code 0 out_buffer !i len;
+                        i := !i + len
                 | _ :: tl -> aux tl
                 | [] -> raise (Failure "unreachable: code for char always exists")
             in
@@ -114,18 +119,18 @@ let decode (dict, (bytes, len)) =
         (* check if the in_buffer[start..] starts with the code *)
         let rec starts_with code i = 
             let j = i - start in
-            if j >= String.length code then true
+            if j >= Bitv.length code then true
+            else if i >= Bitv.length in_buffer then false
             else
-            if i >= Bitv.length in_buffer then false
-            else
-                match Bitv.get in_buffer i, String.get code j with
-                | false, '0' | true, '1' -> starts_with code (i + 1)
-                | _ -> false
+                if Bitv.get in_buffer i = Bitv.get code j then
+                    starts_with code (i + 1)
+                else
+                    false
         in
         (* find char that matches the code *)
         let rec find_char dict start =
             match dict with
-            | (char, code) :: _ when starts_with code start -> char, String.length code
+            | (char, code) :: _ when starts_with code start -> char, Bitv.length code
             | _ :: tl -> find_char tl start
             | _ -> raise (Failure "unreachable: there is always a match")
         in
@@ -137,5 +142,5 @@ let decode (dict, (bytes, len)) =
     in
 
     code_to_string 0;
-    Buffer.contents out_buffer
+    Buffer.to_bytes out_buffer
 

@@ -1,5 +1,8 @@
 open Huffman
 
+let bytes_for_bit a = (a + 7) / 8
+
+(* read file with filename and return string *)
 let read_whole_file filename =
     (* open_in_bin works correctly on Unix and Windows *)
     let ch = open_in_bin filename in
@@ -7,14 +10,24 @@ let read_whole_file filename =
     close_in ch;
     s |> String.to_bytes
 
+(* write whole string to the file with filename *)
 let write_whole_file filename bytes =
     let ch = open_out_bin filename in
     output_bytes ch bytes;
     close_out ch
 
-let bytes_to_int bytes =
-    String.fold_left (fun acc c -> acc * 2 + Char.code c - Char.code '0') 0 bytes
-        |> Int32.of_int
+let code_to_bytes code =
+    let nbytes = bytes_for_bit (Bitv.length code) in
+    let bytes = Bytes.make nbytes (Char.chr 0) in
+    let set_bit i bit =
+        let bit = if bit then 1 lsl (i mod 8) else 0 in
+        let byte_i = nbytes - 1 - (i / 8) in
+        let byte = Bytes.get bytes byte_i in
+        let byte = Char.chr ((Char.code byte) lor bit) in
+        Bytes.set bytes byte_i byte
+    in
+    Bitv.iteri set_bit code;
+    bytes
 
 (*
    encoding: [
@@ -29,15 +42,15 @@ let bytes_to_int bytes =
  *)
 
 let bytes_to_huffman_encoded bytes =
-    let (dict, (bytes, len)) = encode bytes in
+    let dict, (bytes, len) = encode bytes in
     let buffer = Buffer.create len in
     (* add huffman dict *)
     List.iter (fun (ch, code) -> 
         Buffer.add_char buffer ch;
-        Buffer.add_uint8 buffer (String.length code);
-        Buffer.add_int32_be buffer (bytes_to_int code)) dict;
+        Buffer.add_uint8 buffer (Bitv.length code);
+        Buffer.add_bytes buffer (code_to_bytes code)) dict;
     (* add a NULL char as a separator *)
-    Buffer.add_char buffer (Char.chr 0);
+    Buffer.add_char buffer '\x00';
     (* add length in bits *)
     Buffer.add_int32_be buffer (Int32.of_int len);
     (* add encoded text *)
@@ -45,41 +58,32 @@ let bytes_to_huffman_encoded bytes =
     Buffer.to_bytes buffer
 
 let huffman_encoded_to_bytes bytes =
-    let get_int i =
+    (* get int from a sequence of bytes *)
+    let get_int i len =
         let rec aux acc = function
-            | 4 -> i + 4, acc
-            | n -> aux (Int.shift_left acc 8 lor Char.code (Bytes.get bytes (i + n))) (n + 1)
+            | n when n = len -> i + len, acc
+            | n -> aux (acc lsl 8 lor Char.code (Bytes.get bytes (i + n))) (n + 1)
         in aux 0 0
     in
-    let rec build_code dict i =
-        let int_to_bit_str num len =
-            let rec aux acc num len =
-                match num, len with
-                | 0, _ when len <= 0 -> acc
-                | 0, _ -> aux ("0" ^ acc) 0 (len - 1)
-                | _, _ ->
-                        let digit = Char.escaped (Char.chr (num mod 2 + Char.code '0')) in
-                        aux (digit ^ acc) (num / 2) (len - 1)
-            in
-            aux "" num len
-        in
-
-        let byte = Bytes.get bytes i in
-        match byte, Char.code byte with
-        | _, 0 -> i + 1, dict
-        | char, _ ->
-                let len = Char.code (Bytes.get bytes (i + 1)) in
-                let i, code = get_int (i + 2) in
-                let code = int_to_bit_str code len in
-                build_code ((char, code) :: dict) i
+    (* build dict from sequence of bytes until '\x00' is hit *)
+    let rec build_dict dict i =
+        match Bytes.get bytes i with
+        | '\x00' -> i + 1, dict
+        | char ->
+                let len = Bytes.get bytes (i + 1) |> Char.code in
+                let i, code = get_int (i + 2) (bytes_for_bit len) in
+                let _ = Format.printf "char = '%s', len = %d, num = %d\n" (Char.escaped char) len code in
+                let code = int_to_bitv code len in
+                build_dict ((char, code) :: dict) i
     in
 
-    let i, dict = build_code [] 0 in
-    let i, len = get_int i in
+    let i, dict = build_dict [] 0 in
+    let i, len = get_int i (32 / 8) in
     let dict = List.rev dict in
+    let _ = Format.printf "ločilo: '%s', length: %d\n" ((Bytes.get bytes (i - 1)) |> Char.escaped) len in
 
     let bytes = Bytes.sub bytes i (Bytes.length bytes - i) in
-    decode (dict, (bytes, len)) |> String.to_bytes
+    decode (dict, (bytes, len))
 
 type mode =
     | Encode
