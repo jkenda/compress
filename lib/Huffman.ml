@@ -8,8 +8,22 @@ let freq = function
     | Leaf (fr, _)
     | Node (fr, _, _) -> fr
 
-let int_to_bitv num len =
-    Bitv.init len (fun i -> num lsr i mod 2 = 1)
+let bitv_of_int num len =
+    Bitv.init len (fun i -> (num lsr (len - 1 - i)) land 1 = 1)
+
+let bitv_of_string str =
+    Bitv.init (String.length str) (fun i -> str.[i] = '1')
+
+let string_of_bitv bitv =
+    String.init (Bitv.length bitv) (fun i -> if Bitv.get bitv i then '1' else '0')
+
+let bitv_to_int bitv =
+    let len = Bitv.length bitv in
+    let rec aux acc = function
+        | i when i >= len -> acc
+        | i -> aux (acc lor ((if Bitv.get bitv i then 1 else 0) lsl i)) (i + 1)
+    in
+    aux 0 0 
 
 let huffman freqs =
     (* sort list of (char, freq) in ascending order *)
@@ -46,12 +60,9 @@ let huffman freqs =
     in
     (* transform tree to list of huffman codes *)
     let to_huffman nodes =
-        let int_to_bitv num len =
-            Bitv.init len (fun i -> num lsr i mod 2 = 1)
-        in
         let rec aux len code = function
-            | Leaf (_, ch) -> [ch, int_to_bitv code len]
-            | Node (_, lc, rc) -> aux (len + 1) (code * 2 + 0) lc @ aux (len + 1) (code * 2 + 1) rc
+            | Leaf (_, ch) -> [ch, bitv_of_int code len]
+            | Node (_, lc, rc) -> aux (len + 1) (2 * code + 0) lc @ aux (len + 1) (2 * code + 1) rc
         in
         aux 0 0 nodes
     in
@@ -91,7 +102,7 @@ let encode message =
                         Bitv.blit code 0 out_buffer !i len;
                         i := !i + len
                 | _ :: tl -> aux tl
-                | [] -> raise (Failure "unreachable: code for char always exists")
+                | [] -> raise (Failure "code for char always exists")
             in
             aux huffman
         in

@@ -4,7 +4,7 @@ let fs = [("a", 45); ("b", 13); ("c", 12); ("d", 16);
           ("e", 9); ("f", 5)];;
 
 assert (huffman fs
-= [("a", "0"); ("c", "100"); ("b", "101"); ("f", "1100"); ("e", "1101"); ("d", "111")]);;
+= [("a", bitv_of_string "0"); ("c", bitv_of_string "100"); ("b", bitv_of_string "101"); ("f", bitv_of_string "1100"); ("e", bitv_of_string "1101"); ("d", bitv_of_string "111")]);;
 
 let lorem_ipsum = "
 Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ac ut consequat semper viverra nam libero justo laoreet sit. Ante in nibh mauris cursus. Quam viverra orci sagittis eu volutpat odio facilisis mauris sit. Dui vivamus arcu felis bibendum ut tristique. Vitae auctor eu augue ut lectus arcu bibendum. Duis at consectetur lorem donec massa sapien faucibus et molestie. Ac tincidunt vitae semper quis lectus nulla at volutpat. Tempus egestas sed sed risus pretium quam vulputate. Luctus venenatis lectus magna fringilla urna porttitor. Sollicitudin nibh sit amet commodo. Facilisis mauris sit amet massa vitae tortor condimentum lacinia quis. Dolor sit amet consectetur adipiscing. Libero id faucibus nisl tincidunt eget. Auctor urna nunc id cursus metus aliquam eleifend mi in. Massa massa ultricies mi quis hendrerit dolor magna eget. Sed egestas egestas fringilla phasellus faucibus scelerisque eleifend donec pretium. Risus in hendrerit gravida rutrum quisque. Sed vulputate mi sit amet mauris commodo quis imperdiet massa. Ut lectus arcu bibendum at varius vel pharetra vel.
@@ -36,5 +36,5 @@ Commodo odio aenean sed adipiscing diam donec adipiscing tristique. A arcu cursu
 
 let encoded = encode (Bytes.of_string lorem_ipsum) in
 let decoded = decode encoded in
-assert (decoded = lorem_ipsum);;
+assert (decoded = Bytes.of_string lorem_ipsum);;
 

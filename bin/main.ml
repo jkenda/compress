@@ -16,19 +16,6 @@ let write_whole_file filename bytes =
     output_bytes ch bytes;
     close_out ch
 
-let code_to_bytes code =
-    let nbytes = bytes_for_bit (Bitv.length code) in
-    let bytes = Bytes.make nbytes (Char.chr 0) in
-    let set_bit i bit =
-        let bit = if bit then 1 lsl (i mod 8) else 0 in
-        let byte_i = nbytes - 1 - (i / 8) in
-        let byte = Bytes.get bytes byte_i in
-        let byte = Char.chr ((Char.code byte) lor bit) in
-        Bytes.set bytes byte_i byte
-    in
-    Bitv.iteri set_bit code;
-    bytes
-
 (*
    encoding: [
        <huffman dict>
@@ -38,10 +25,17 @@ let code_to_bytes code =
 
    <huffman dict>: [
        (char, n_bits, bits)
-   ] where char = 8b, n_bits = 8b, bits = 32b
+   ] where char = 1B, n_bits = 1B, bits = 1-32B
  *)
 
 let bytes_to_huffman_encoded bytes =
+    (* convert huffman code bitv to bytes *)
+    let code_to_bytes code =
+        let nbytes = bytes_for_bit (Bitv.length code) in
+        let bytes = Bitv.to_bytes code in
+        Bytes.sub bytes (Bytes.length bytes - nbytes) nbytes
+    in
+
     let dict, (bytes, len) = encode bytes in
     let buffer = Buffer.create len in
     (* add huffman dict *)
@@ -59,29 +53,31 @@ let bytes_to_huffman_encoded bytes =
 
 let huffman_encoded_to_bytes bytes =
     (* get int from a sequence of bytes *)
-    let get_int i len =
-        let rec aux acc = function
-            | n when n = len -> i + len, acc
-            | n -> aux (acc lsl 8 lor Char.code (Bytes.get bytes (i + n))) (n + 1)
-        in aux 0 0
+    let bytes_to_code i len =
+        let int_size = bytes_for_bit Sys.int_size in
+        let buffer = Buffer.create (int_size + bytes_for_bit len) in
+        if int_size == 8 then
+            Buffer.add_int64_ne buffer (Int64.of_int len)
+        else (
+            Buffer.add_int32_ne buffer (Int32.of_int len)
+        );
+        Buffer.add_bytes buffer (Bytes.sub bytes i len); 
+        i + bytes_for_bit len, Buffer.to_bytes buffer |> Bitv.of_bytes
     in
     (* build dict from sequence of bytes until '\x00' is hit *)
     let rec build_dict dict i =
         match Bytes.get bytes i with
         | '\x00' -> i + 1, dict
         | char ->
-                let len = Bytes.get bytes (i + 1) |> Char.code in
-                let i, code = get_int (i + 2) (bytes_for_bit len) in
-                let _ = Format.printf "char = '%s', len = %d, num = %d\n" (Char.escaped char) len code in
-                let code = int_to_bitv code len in
+                let len = Bytes.get_uint8 bytes (i + 1) in
+                let i, code = bytes_to_code (i + 2) len in
                 build_dict ((char, code) :: dict) i
     in
 
     let i, dict = build_dict [] 0 in
-    let i, len = get_int i (32 / 8) in
-    let dict = List.rev dict in
-    let _ = Format.printf "ločilo: '%s', length: %d\n" ((Bytes.get bytes (i - 1)) |> Char.escaped) len in
+    let i, len = i + 4, Bytes.get_int32_be bytes i |> Int32.to_int in
 
+    let dict = List.rev dict in
     let bytes = Bytes.sub bytes i (Bytes.length bytes - i) in
     decode (dict, (bytes, len))
 
