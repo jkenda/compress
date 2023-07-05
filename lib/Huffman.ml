@@ -1,4 +1,5 @@
 open Tools
+let time = time
 
 type 'a node =
     | Leaf of int * 'a

@@ -37,7 +37,7 @@ let bytes_to_huffman_encoded bytes =
     in
 
     let dict, (bytes, len) = encode bytes in
-    let buffer = Buffer.create len in
+    let buffer = Buffer.create (len * 2) in
 
     (* add size of dict *)
     Buffer.add_uint8 buffer (List.length dict - 1);
@@ -59,11 +59,12 @@ let huffman_encoded_to_bytes bytes =
     let bytes_to_code i len =
         let int_size = bytes_for_bit Sys.int_size in
         let buffer = Buffer.create (int_size + bytes_for_bit len) in
-        if int_size == 8 then (
-            Buffer.add_int64_ne buffer (Int64.of_int len))
-        else (
-            Buffer.add_int32_ne buffer (Int32.of_int len));
-        Buffer.add_bytes buffer (Bytes.sub bytes i len); 
+        (match int_size with
+        | 8 -> Buffer.add_int64_ne buffer (Int64.of_int len)
+        | 4 -> Buffer.add_int32_ne buffer (Int32.of_int len)
+        | 2 -> Buffer.add_int16_ne buffer len
+        | _ -> assert false);
+        Buffer.add_subbytes buffer bytes i len; 
         i + bytes_for_bit len, Buffer.to_bytes buffer |> Bitv.of_bytes
     in
     (* build dict from sequence of bytes *)
@@ -76,12 +77,12 @@ let huffman_encoded_to_bytes bytes =
             build_dict ((char, code) :: dict) (n + 1) i
     in
 
-    let i, dict = build_dict [] 0 1 in
+    let i, dict = time "decode.build_dict" build_dict [] 0 1 in
     let i, len = i + 4, Bytes.get_int32_be bytes i |> Int32.to_int in
 
     let dict = List.rev dict in
     let bytes = Bytes.sub bytes i (Bytes.length bytes - i) in
-    decode (dict, (bytes, len))
+    time "decode.decode" decode (dict, (bytes, len))
 
 type mode =
     | Encode
@@ -104,8 +105,8 @@ let () =
 
         let output =
             match mode with
-            | Encode -> bytes_to_huffman_encoded input
-            | Decode -> huffman_encoded_to_bytes input
+            | Encode -> time "encode" bytes_to_huffman_encoded input
+            | Decode -> time "decode" huffman_encoded_to_bytes input
         in
         
         output
