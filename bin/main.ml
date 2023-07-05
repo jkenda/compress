@@ -17,15 +17,15 @@ let write_whole_file filename bytes =
     close_out ch
 
 (*
-   encoding: [
+   encoding: (
        <huffman dict>
-       <NULL char>
        <encoded text>
-   ]
+   )
 
-   <huffman dict>: [
-       (char, n_bits, bits)
-   ] where char = 1B, n_bits = 1B, bits = 1-32B
+   <huffman dict>: (
+       <num>
+       [(char, n_bits, bits); num]
+   ) where char = 1B, n_bits = 1B, bits = 1-32B
  *)
 
 let bytes_to_huffman_encoded bytes =
@@ -38,13 +38,14 @@ let bytes_to_huffman_encoded bytes =
 
     let dict, (bytes, len) = encode bytes in
     let buffer = Buffer.create len in
+
+    (* add size of dict *)
+    Buffer.add_uint8 buffer (List.length dict - 1);
     (* add huffman dict *)
     List.iter (fun (ch, code) -> 
         Buffer.add_char buffer ch;
         Buffer.add_uint8 buffer (Bitv.length code);
         Buffer.add_bytes buffer (code_to_bytes code)) dict;
-    (* add a NULL char as a separator *)
-    Buffer.add_char buffer '\x00';
     (* add length in bits *)
     Buffer.add_int32_be buffer (Int32.of_int len);
     (* add encoded text *)
@@ -52,29 +53,30 @@ let bytes_to_huffman_encoded bytes =
     Buffer.to_bytes buffer
 
 let huffman_encoded_to_bytes bytes =
-    (* get int from a sequence of bytes *)
+    (* get size of dict *)
+    let dict_size = Bytes.get_uint8 bytes 0 + 1 in
+    (* get code from sequence of bytes *)
     let bytes_to_code i len =
         let int_size = bytes_for_bit Sys.int_size in
         let buffer = Buffer.create (int_size + bytes_for_bit len) in
-        if int_size == 8 then
-            Buffer.add_int64_ne buffer (Int64.of_int len)
+        if int_size == 8 then (
+            Buffer.add_int64_ne buffer (Int64.of_int len))
         else (
-            Buffer.add_int32_ne buffer (Int32.of_int len)
-        );
+            Buffer.add_int32_ne buffer (Int32.of_int len));
         Buffer.add_bytes buffer (Bytes.sub bytes i len); 
         i + bytes_for_bit len, Buffer.to_bytes buffer |> Bitv.of_bytes
     in
-    (* build dict from sequence of bytes until '\x00' is hit *)
-    let rec build_dict dict i =
-        match Bytes.get bytes i with
-        | '\x00' -> i + 1, dict
-        | char ->
-                let len = Bytes.get_uint8 bytes (i + 1) in
-                let i, code = bytes_to_code (i + 2) len in
-                build_dict ((char, code) :: dict) i
+    (* build dict from sequence of bytes *)
+    let rec build_dict dict n i =
+        if n = dict_size then i, dict
+        else
+            let char = Bytes.get bytes i in
+            let len = Bytes.get_uint8 bytes (i + 1) in
+            let i, code = bytes_to_code (i + 2) len in
+            build_dict ((char, code) :: dict) (n + 1) i
     in
 
-    let i, dict = build_dict [] 0 in
+    let i, dict = build_dict [] 0 1 in
     let i, len = i + 4, Bytes.get_int32_be bytes i |> Int32.to_int in
 
     let dict = List.rev dict in
