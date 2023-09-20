@@ -6,3 +6,5 @@ let time f_name f arg =
     let _ = printf "%.3f ms <- %s\n" ((t1 -. t0) *. 1000.) f_name in
     result
 
+exception Unreachable of string
+

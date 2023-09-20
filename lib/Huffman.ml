@@ -1,76 +1,66 @@
 open Tools
 let time = time
 
+let bitv_of_string str =
+    Bitv.init (String.length str) (fun i -> str.[i] = '1')
+
+let string_of_bitv bitv =
+    String.init (Bitv.length bitv) (fun i -> if Bitv.unsafe_get bitv i then '1' else '0')
+
+let bitv_of_int num len =
+    Bitv.init len (fun i -> (num lsr (len - 1 - i)) land 1 = 1)
+
 type 'a node =
     | Leaf of int * 'a
     | Node of int * 'a node * 'a node
 
 let freq = function
-    | Leaf (fr, _)
-    | Node (fr, _, _) -> fr
+    | Leaf (freq, _)
+    | Node (freq, _, _) -> freq
 
-let bitv_of_int num len =
-    Bitv.init len (fun i -> (num lsr (len - 1 - i)) land 1 = 1)
-
-let bitv_of_string str =
-    Bitv.init (String.length str) (fun i -> str.[i] = '1')
-
-let string_of_bitv bitv =
-    String.init (Bitv.length bitv) (fun i -> if Bitv.get bitv i then '1' else '0')
-
-let bitv_to_int bitv =
-    let len = Bitv.length bitv in
-    let rec aux acc = function
-        | i when i >= len -> acc
-        | i -> aux (acc lor ((if Bitv.get bitv i then 1 else 0) lsl i)) (i + 1)
-    in
-    aux 0 0 
-
+(* transform (char, freq) list to a (char, huffman code) list *)
 let huffman freqs =
-    (* sort list of (char, freq) in ascending order *)
-    let sort =
-        List.sort
-        (fun (_, f1) (_, f2) -> f1 - f2)
-    in
-    (* transform list of (char, freq) tuples to list of nodes *)
-    let rec make_nodes = function
-        | [] -> []
-        | (ch, fr) :: tl -> Leaf (fr, ch) :: make_nodes tl
-    in
-    (* build tree *)
+    (* build huffman tree *)
     let rec build_tree list =
         (* make node from first two nodes in the list *)
         let combine = function
             | a :: b :: tl -> Node (freq a + freq b, a, b), tl
-            | _ -> raise (Failure "unreachable: always at least 2 nodes")
+            | _ -> raise (Unreachable "always at least 2 nodes")
         in
         (* insert node at the appropriate position *)
-        let rec insert (node, list) =
-            match list with
-            | [] -> [node]
-            | hd :: _ as ls when freq node < freq hd -> node :: ls
-            | hd :: tl -> hd :: insert (node, tl)
+        let insert (node, list) =
+            let rec aux = function
+                | [] -> [node]
+                | hd :: _ as ls when freq node < freq hd -> node :: ls
+                | hd :: tl -> hd :: aux tl
+            in aux list
         in
 
-        if List.length list = 1 then List.hd list
-        else
-            list
+        (* keep building the tree until only one node is left (the root) *)
+        match list with
+        | [] -> None
+        | [root] -> Some root
+        | _ -> list
                 |> combine
                 |> insert
                 |> build_tree
     in
     (* transform tree to list of huffman codes *)
-    let to_huffman nodes =
+    let to_huffman tree =
         let rec aux len code = function
-            | Leaf (_, ch) -> [ch, bitv_of_int code len]
-            | Node (_, lc, rc) -> aux (len + 1) (2 * code + 0) lc @ aux (len + 1) (2 * code + 1) rc
+            | Leaf (_, char) -> [char, bitv_of_int code len]
+            | Node (_, lc, rc) -> aux (len + 1) (2 * code + 0) lc
+                                @ aux (len + 1) (2 * code + 1) rc
         in
-        aux 0 0 nodes
+        match tree with
+        | None -> []
+        | Some Leaf (_, char) -> [char, bitv_of_int 0 1]
+        | Some tree -> aux 0 0 tree
     in
 
     freqs
-        |> sort
-        |> make_nodes
+        |> List.sort (fun (_, f1) (_, f2) -> f1 - f2)
+        |> List.map (fun (char, freq) -> Leaf (freq, char))
         |> build_tree
         |> to_huffman
 
@@ -79,44 +69,44 @@ let encode message =
     (* calculate frequencies of characters *)
     let freqs string =
         let array = Array.make 256 0 in
-        let _ = Bytes.iter (fun c -> array.(Char.code c) <- array.(Char.code c) + 1) string in
-        let rec aux acc = function
-            | -1 -> acc
-            | n -> aux (if array.(n) > 0 then (Char.chr n, array.(n)) :: acc else acc) (n - 1)
+        Bytes.iter (fun c -> array.(Char.code c) <- array.(Char.code c) + 1) string;
+        let rec aux = function
+            | 256 -> []
+            | n -> if array.(n) > 0 then (Char.chr n, array.(n)) :: aux (n + 1) else aux (n + 1)
         in
-        aux [] 255
-    in
-    (* put most common characters first *)
-    let sort =
-        List.sort
-        (fun (_, c1) (_, c2) -> Bitv.length c1 - Bitv.length c2)
+        aux 0
     in
     (* buffer for building strings *)
     let out_buffer = Bitv.create (Bytes.length message * 8) false in
     let i = ref 0 in
     (* encode mesage with huffman *)
-    let to_code huffman =
+    let to_code dict =
         let add_code char =
-            let rec aux = function
+            let rec find_code = function
                 | (ch, code) :: _ when ch = char ->
                         let len = Bitv.length code in
                         Bitv.blit code 0 out_buffer !i len;
                         i := !i + len
-                | _ :: tl -> aux tl
+                | _ :: tl -> find_code tl
                 | [] -> raise (Failure "code for char always exists")
             in
-            aux huffman
+            find_code dict
         in
         Bytes.iter add_code message;
         (Bitv.sub out_buffer 0 !i |> Bitv.to_bytes), !i
     in
 
-    let huffman = message
+    let dict = message
                 |> time "encode.freqs" freqs
                 |> time "encode.huffman" huffman
-                |> time "encode.sort" sort
+                |> time "encode.sort" List.sort (fun (_, c1) (_, c2) -> Bitv.length c1 - Bitv.length c2)
     in
-    (huffman, time "encode.to_code" to_code huffman)
+    let (bytes, _) as encoded = time "encode.to_code" to_code dict in
+    Format.printf "raw size: %d B, compressed size: %d B, compression ratio: %f\n"
+        (Bytes.length message)
+        (Bytes.length bytes)
+        (Float.of_int (Bytes.length message) /. Float.of_int (Bytes.length bytes));
+    (dict, encoded)
 
 (* decode huffman encoded message *)
 let decode (dict, (bytes, len)) =
@@ -134,7 +124,7 @@ let decode (dict, (bytes, len)) =
             if j >= Bitv.length code then true
             else if i >= Bitv.length in_buffer then false
             else
-                if Bitv.get in_buffer i = Bitv.get code j then
+                if Bitv.unsafe_get in_buffer i = Bitv.unsafe_get code j then
                     starts_with code (i + 1)
                 else
                     false
@@ -153,6 +143,6 @@ let decode (dict, (bytes, len)) =
             code_to_string (start + len)
     in
 
-    code_to_string 0;
+    time "decode.code_to_string" code_to_string 0;
     Buffer.to_bytes out_buffer
 

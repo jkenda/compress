@@ -8,7 +8,7 @@ let read_whole_file filename =
     let ch = open_in_bin filename in
     let s = really_input_string ch (in_channel_length ch) in
     close_in ch;
-    s |> String.to_bytes
+    String.to_bytes s
 
 (* write whole string to the file with filename *)
 let write_whole_file filename bytes =
@@ -60,29 +60,30 @@ let huffman_encoded_to_bytes bytes =
         let int_size = bytes_for_bit Sys.int_size in
         let buffer = Buffer.create (int_size + bytes_for_bit len) in
         (match int_size with
-        | 8 -> Buffer.add_int64_ne buffer (Int64.of_int len)
-        | 4 -> Buffer.add_int32_ne buffer (Int32.of_int len)
-        | 2 -> Buffer.add_int16_ne buffer len
-        | _ -> assert false);
+         | 8 -> Buffer.add_int64_ne buffer (Int64.of_int len)
+         | 4 -> Buffer.add_int32_ne buffer (Int32.of_int len)
+         | _ -> assert false);
         Buffer.add_subbytes buffer bytes i len; 
         i + bytes_for_bit len, Buffer.to_bytes buffer |> Bitv.of_bytes
     in
     (* build dict from sequence of bytes *)
-    let rec build_dict dict n i =
-        if n = dict_size then i, dict
-        else
-            let char = Bytes.get bytes i in
-            let len = Bytes.get_uint8 bytes (i + 1) in
-            let i, code = bytes_to_code (i + 2) len in
-            build_dict ((char, code) :: dict) (n + 1) i
+    let build_dict i =
+        let rec aux acc n i =
+            if n = dict_size then i, acc
+            else
+                let char = Bytes.get bytes i in
+                let len = Bytes.get_uint8 bytes (i + 1) in
+                let i, code = bytes_to_code (i + 2) len in
+                aux ((char, code) :: acc) (n + 1) i
+        in
+        let i, dict = aux [] 0 i in
+        i, List.rev dict
     in
 
-    let i, dict = time "decode.build_dict" build_dict [] 0 1 in
+    let i, dict = time "decode.build_dict" build_dict 1 in
     let i, len = i + 4, Bytes.get_int32_be bytes i |> Int32.to_int in
-
-    let dict = List.rev dict in
     let bytes = Bytes.sub bytes i (Bytes.length bytes - i) in
-    time "decode.decode" decode (dict, (bytes, len))
+    decode (dict, (bytes, len))
 
 type mode =
     | Encode
