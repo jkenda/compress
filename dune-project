@@ -1,26 +1,26 @@
 (lang dune 3.8)
 
-(name huffman)
+(name compress)
 
 (generate_opam_files true)
 
 (source
- (github username/reponame))
+ (github jkenda/compress))
 
 (authors "Jakob Kenda")
 
 (maintainers "Jakob Kenda")
 
-(license LICENSE)
+(license MIT)
 
 (documentation https://url/to/documentation)
 
 (package
- (name huffman)
- (synopsis "A short synopsis")
- (description "A longer description")
+ (name compress)
+ (synopsis "A simple compression tool")
+ (description "Compress files with Huffman, Lempel-Ziv or Deflate.")
  (depends ocaml dune bitv)
  (tags
-  (topics "to describe" your project)))
+  (compression huffman lz77 deflate)))
 
 ; See the complete stanza docs at https://dune.readthedocs.io/en/stable/dune-files.html#dune-project

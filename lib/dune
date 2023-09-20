@@ -1,3 +1,17 @@
 (library
+ (name tools)
+ (modules tools)
+ (libraries unix))
+
+(library
  (name huffman)
- (libraries bitv))
+ (modules huffman)
+ (libraries bitv tools)
+ (inline_tests)
+ (preprocess (pps ppx_inline_test)))
+
+(library
+ (name lempel_ziv)
+ (modules lempel_ziv)
+ (inline_tests)
+ (preprocess (pps ppx_inline_test)))

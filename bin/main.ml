@@ -1,5 +1,3 @@
-open Huffman
-
 let bytes_for_bit a = (a + 7) / 8
 
 (* read file with filename and return string *)
@@ -29,6 +27,7 @@ let write_whole_file filename bytes =
  *)
 
 let bytes_to_huffman_encoded bytes =
+    let open Huffman in
     (* convert huffman code bitv to bytes *)
     let code_to_bytes code =
         let nbytes = bytes_for_bit (Bitv.length code) in
@@ -53,6 +52,9 @@ let bytes_to_huffman_encoded bytes =
     Buffer.to_bytes buffer
 
 let huffman_encoded_to_bytes bytes =
+    let open Huffman in
+    let open Tools in
+
     (* get size of dict *)
     let dict_size = Bytes.get_uint8 bytes 0 + 1 in
     (* get code from sequence of bytes *)
@@ -90,6 +92,7 @@ type mode =
     | Decode
 
 let () =
+    let open Tools in
     if Array.length Sys.argv < 4 then
         raise (Failure "Usage: ./main <encode|decode> <infile> <outfile>")
     else
