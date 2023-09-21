@@ -8,10 +8,10 @@ type lz =
     | Char of char
     | Seq of seq
 
-type node = { id : int; ch : char option; mutable children : node list }
+type node = { id : int; ch : char option; parent : node option; mutable children : node list }
 
-let lempel_ziv string =
-    let root = { id = 0; ch = None; children = [] }
+let encode string =
+    let root = { id = 0; ch = None; parent = None; children = [] }
     and size = ref 1 in
 
     let find string i =
@@ -32,7 +32,7 @@ let lempel_ziv string =
 
     and insert id char =
         let make char =
-            { id = !size; ch = Some char; children = [] }
+            { id = !size; ch = Some char; parent = None; children = [] }
         in
         let rec insert' = function
             | [] -> false
@@ -48,32 +48,89 @@ let lempel_ziv string =
         ()
     in
 
-    let rec lz' dict i =
+    let rec encode' dict i =
         if i >= String.length string then dict
         else
             let (id, len) = find string i in
             insert id string.[i];
             let next_i = i + len in
-            lz' (dict ^ (Format.sprintf "%c%c" (Char.unsafe_chr id) (try string.[next_i] with _ -> '$'))) (next_i + 1)
+            let next_char = try String.make 1 string.[next_i] with _ -> "" in
+            encode' (dict ^ (Format.sprintf "%c%s" (Char.unsafe_chr id) next_char)) (next_i + 1)
     in
-    lz' "" 0
-        
-let test_lz input expected =
-    let output = lempel_ziv input in
+    if String.length string = 0 then "\x00"
+    else encode' "" 0
+
+let test_lz f input expected =
+    let output = f input in
     let pass = output = expected in
     if not pass then print_endline output;
     pass
 
-let%test _ = test_lz "" ""
-let%test _ = test_lz "a" "\x00a"
-let%test _ = test_lz "aa" "\x00a\x01$"
-let%test _ = test_lz "aba" "\x00a\x00b\x01$"
-let%test _ = test_lz "abab" "\x00a\x00b\x01b"
-let%test _ = test_lz "abba" "\x00a\x00b\x02a"
-let%test _ = test_lz "AABBA" "\x00A\x01B\x00B\x01$"
+let%test _ = test_lz encode "" "\x00"
+let%test _ = test_lz encode "a" "\x00a"
+let%test _ = test_lz encode "aa" "\x00a\x01"
+let%test _ = test_lz encode "aba" "\x00a\x00b\x01"
+let%test _ = test_lz encode "abab" "\x00a\x00b\x01b"
+let%test _ = test_lz encode "abba" "\x00a\x00b\x02a"
+let%test _ = test_lz encode "AABBA" "\x00A\x01B\x00B\x01"
 
-let () =
-    let lorem_ipsum = "
+
+let decode string =
+    let dict = { id = 0; ch = None; parent = None; children = [] }
+    and size = ref 1 in
+    let make parent char =
+        { id = !size; ch = Some char; parent = Some parent; children = [] }
+    in
+
+    let insert id char =
+        let rec insert' = function
+            | [] -> None
+            | node :: tl ->
+                if node.id = id then (
+                    node.children <- make node char :: node.children;
+                    size := !size + 1;
+                    Some node)
+                else
+                    match insert' node.children with
+                    | None -> insert' tl
+                    | node -> node
+        in
+        Option.get @@ insert' [dict]
+    and build node =
+        let rec build' node acc =
+            if node.id = 0 then acc
+            else
+                build' (Option.get node.parent) (String.make 1 (Option.get node.ch) ^ acc)
+        in
+        build' node ""
+    in
+
+    let rec decode' i acc =
+        if i >= String.length string then acc
+        else
+            let (next_char, add_next_char) =
+                try (string.[i + 1], fun str -> str ^ String.make 1 string.[i + 1])
+                with _ -> ('$', fun str -> str)
+            in
+            acc ^
+            (next_char
+                    |> insert (Char.code string.[i]) 
+                    |> build
+                    |> add_next_char
+                    |> decode' (i + 2))
+    in
+    decode' 0 ""
+
+let%test _ = test_lz decode "\x00" ""
+let%test _ = test_lz decode "\x00a" "a"
+let%test _ = test_lz decode "\x00a\x01" "aa"
+let%test _ = test_lz decode "\x00a\x00b\x01" "aba"
+let%test _ = test_lz decode "\x00a\x00b\x01b" "abab"
+let%test _ = test_lz decode "\x00a\x00b\x02a" "abba"
+let%test _ = test_lz decode "\x00A\x01B\x00B\x01" "AABBA"
+
+
+let lorem_ipsum = "
 Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ac ut consequat semper viverra nam libero justo laoreet sit. Ante in nibh mauris cursus. Quam viverra orci sagittis eu volutpat odio facilisis mauris sit. Dui vivamus arcu felis bibendum ut tristique. Vitae auctor eu augue ut lectus arcu bibendum. Duis at consectetur lorem donec massa sapien faucibus et molestie. Ac tincidunt vitae semper quis lectus nulla at volutpat. Tempus egestas sed sed risus pretium quam vulputate. Luctus venenatis lectus magna fringilla urna porttitor. Sollicitudin nibh sit amet commodo. Facilisis mauris sit amet massa vitae tortor condimentum lacinia quis. Dolor sit amet consectetur adipiscing. Libero id faucibus nisl tincidunt eget. Auctor urna nunc id cursus metus aliquam eleifend mi in. Massa massa ultricies mi quis hendrerit dolor magna eget. Sed egestas egestas fringilla phasellus faucibus scelerisque eleifend donec pretium. Risus in hendrerit gravida rutrum quisque. Sed vulputate mi sit amet mauris commodo quis imperdiet massa. Ut lectus arcu bibendum at varius vel pharetra vel.
 
 Scelerisque in dictum non consectetur a erat. Commodo quis imperdiet massa tincidunt nunc pulvinar sapien et ligula. Ultricies tristique nulla aliquet enim tortor at auctor urna nunc. Arcu non odio euismod lacinia at quis risus sed vulputate. Fermentum et sollicitudin ac orci phasellus egestas. Eu sem integer vitae justo eget. Pharetra et ultrices neque ornare aenean euismod elementum. Egestas egestas fringilla phasellus faucibus. Scelerisque purus semper eget duis at tellus at urna condimentum. Ut etiam sit amet nisl. Consectetur a erat nam at. Lectus arcu bibendum at varius. At tempor commodo ullamcorper a lacus vestibulum. At imperdiet dui accumsan sit amet nulla facilisi. Sit amet massa vitae tortor condimentum lacinia quis vel.
@@ -97,9 +154,14 @@ Vitae et leo duis ut diam quam. Rutrum quisque non tellus orci ac. Lectus sit am
 Pellentesque adipiscing commodo elit at imperdiet dui accumsan sit amet. Quis hendrerit dolor magna eget est lorem ipsum. At lectus urna duis convallis convallis. Integer eget aliquet nibh praesent tristique. Mattis molestie a iaculis at erat pellentesque adipiscing. Nunc vel risus commodo viverra maecenas accumsan. Dapibus ultrices in iaculis nunc sed augue lacus viverra. At elementum eu facilisis sed odio. Eget duis at tellus at. Dui faucibus in ornare quam viverra orci sagittis eu. Sed viverra tellus in hac habitasse.
 
 Dui faucibus in ornare quam viverra orci sagittis eu volutpat. Volutpat lacus laoreet non curabitur gravida arcu ac tortor. Nunc mattis enim ut tellus. Sollicitudin ac orci phasellus egestas tellus rutrum tellus. In iaculis nunc sed augue lacus viverra vitae. Ut sem viverra aliquet eget sit. Ac tortor vitae purus faucibus. Ac orci phasellus egestas tellus rutrum tellus. Dictum varius duis at consectetur lorem donec massa. Eu consequat ac felis donec et. Phasellus faucibus scelerisque eleifend donec. Mauris pharetra et ultrices neque ornare aenean euismod. Leo duis ut diam quam nulla. Risus at ultrices mi tempus imperdiet. Vulputate eu scelerisque felis imperdiet.
+"
 
-Commodo odio aenean sed adipiscing diam donec adipiscing tristique. A arcu cursus vitae congue mauris rhoncus aenean vel elit. Nullam non nisi est sit amet facilisis. Egestas tellus rutrum tellus pellentesque eu tincidunt tortor. Aliquet nibh praesent tristique magna sit amet. Lobortis elementum nibh tellus molestie nunc non blandit. Porttitor eget dolor morbi non arcu risus quis varius. Id diam maecenas ultricies mi eget mauris pharetra et. Arcu cursus vitae congue mauris rhoncus. Convallis aenean et tortor at risus viverra adipiscing at in. Ac tincidunt vitae semper quis lectus nulla at volutpat diam. Convallis convallis tellus id interdum velit laoreet id.
-    " in
-    let lorem_ipsum_encoded = lempel_ziv lorem_ipsum in
-    Format.printf "compression ratio: %f\n" ((String.length lorem_ipsum |> Float.of_int) /. (String.length lorem_ipsum_encoded |> Float.of_int))
+let lorem_ipsum_encoded = encode lorem_ipsum
+let%test _ = decode lorem_ipsum_encoded = lorem_ipsum
+
+let () =
+    print_endline @@ decode lorem_ipsum_encoded;
+    Format.printf "compression ratio: %f\n"
+    @@ ((String.length lorem_ipsum |> Float.of_int)
+     /. (String.length lorem_ipsum_encoded |> Float.of_int))
 
