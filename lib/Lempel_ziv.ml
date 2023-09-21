@@ -4,148 +4,110 @@ type seq = {
     ch : char
 }
 
-type token =
-    | Id of int
-    | Char of char
+let compress input =
+    let dict = Hashtbl.create 256 in
+    for i = 0 to 255 do
+        Hashtbl.add dict (String.make 1 (Char.chr i)) i
+    done;
 
-type node = { id : int; ch : char option; parent : node option; mutable children : node list }
-
-let make_node parent id ch = {
-    id;
-    ch = Some ch;
-    parent = Some parent;
-    children = []
-}
-
-let encode input =
-    let root = { id = 0; ch = None; parent = None; children = [] }
-    and size = ref 1 in
-
-    (* find the longest substring already in the dict *)
-    let find string i =
-        let rec find' parent i len =
-            let find_max ((_, max_len) as max) node =
-                let (_, len) as curr =
-                    if try Some string.[i] = node.ch with _ -> false then
-                        find' node (i + 1) (len + 1)
-                    else if len = 0 then
-                        find' node i len
-                    else max
-                in
-                if len > max_len then curr else max
-            in
-            List.fold_left find_max (parent, len) parent.children
-        in
-        find' root i 0
-    (* insert the new node into the dict *)
-    and insert_child node char =
-        node.children <- make_node node !size char :: node.children;
-        size := !size + 1
-    in
-
-    let rec encode' dict i =
-        if i >= String.length input then List.rev dict
+    let rec encode' i w output =
+        if i >= String.length input then
+            List.rev @@
+                if w = "" then output
+                else Hashtbl.find dict w :: output
         else
-            let (node, len) = find input i in
-            insert_child node input.[i];
-            let next_i = i + len in
-            let dict =
-                try Char input.[next_i] :: Id node.id :: dict
-                with Invalid_argument _ -> Id node.id :: dict
-            in
-            encode' dict (next_i + 1)
+            let c = (String.make 1 input.[i]) in
+            let wc = w ^ c in
+            
+            if Hashtbl.mem dict wc then
+                encode' (i + 1) wc output
+            else (
+                Hashtbl.add dict wc (Hashtbl.length dict);
+                encode' (i + 1) c (Hashtbl.find dict w :: output))
     in
-    if String.length input = 0 then [Id 0]
-    else encode' [] 0
+    encode' 0 "" []
 
 
 let test_encode input expected =
     let rec print = function
         | [] -> ()
-        | Id id :: tl -> print_int id; print tl
-        | Char ch :: tl -> print_char ch; print tl
+        | id :: tl ->
+                (if id < 256 then
+                    print_char @@ Char.chr id
+                else
+                    Format.printf "[%d]" id);
+                print tl
     in
-    let output = encode input in
+    let output = compress input in
     let pass = output = expected in
     if not pass then (print output; print_newline ());
     pass
 
-let%test _ = test_encode ""      [Id 0]
-let%test _ = test_encode "a"     [Id 0; Char 'a']
-let%test _ = test_encode "aa"    [Id 0; Char 'a'; Id 1]
-let%test _ = test_encode "aba"   [Id 0; Char 'a'; Id 0; Char 'b'; Id 1]
-let%test _ = test_encode "abab"  [Id 0; Char 'a'; Id 0; Char 'b'; Id 1; Char 'b']
-let%test _ = test_encode "abba"  [Id 0; Char 'a'; Id 0; Char 'b'; Id 2; Char 'a']
-let%test _ = test_encode "AABBA" [Id 0; Char 'A'; Id 1; Char 'B'; Id 0; Char 'B'; Id 1]
+let%test _ = test_encode ""         []
+let%test _ = test_encode "a"        [Char.code 'a']
+let%test _ = test_encode "aa"       [Char.code 'a'; Char.code 'a']
+let%test _ = test_encode "aba"      [Char.code 'a'; Char.code 'b'; Char.code 'a']
+let%test _ = test_encode "abab"     [Char.code 'a'; Char.code 'b'; 256]
+let%test _ = test_encode "abba"     [Char.code 'a'; Char.code 'b'; Char.code 'b'; Char.code 'a']
+
+let%test _ = test_encode "AABBA" 
+[Char.code 'A'; Char.code 'A'; Char.code 'B'; Char.code 'B'; Char.code 'A']
+
+let%test _ = test_encode "AABBAABB"
+[Char.code 'A'; Char.code 'A'; Char.code 'B'; Char.code 'B'; 256; 258]
 
 
-let decode list =
-    let dict = { id = 0; ch = None; parent = None; children = [] }
-    and size = ref 1 in
 
-    let insert id char =
-        let rec insert' = function
-            | [] -> None
-            | node :: tl ->
-                if node.id = id then (
-                    node.children <- make_node node !size char :: node.children;
-                    size := !size + 1;
-                    Some node)
-                else
-                    match insert' node.children with
-                    | None -> insert' tl
-                    | node -> node
-        in
-        Option.get @@ insert' [dict]
-    and build node =
-        let rec build' node acc =
-            if node.id = 0 then acc
-            else
-                build' (Option.get node.parent) (String.make 1 (Option.get node.ch) ^ acc)
-        in
-        build' node ""
-    in
+let decompress input =
+    let dict = Hashtbl.create 256 in
+    for i = 0 to 255 do
+        Hashtbl.add dict i (String.make 1 (Char.chr i))
+    done;
 
-    let rec decode' acc = function
-        | [] -> acc
-        | [Id id] -> acc ^ (insert id '$' |> build)
-        | Id id :: Char char :: tl ->
-                let add_next_char str =
-                     str ^ String.make 1 char
+    let rec decode' w output = function
+        | [] -> output
+        | id :: tl ->
+                let entry =
+                    match Hashtbl.find_opt dict id with
+                    | Some str -> str
+                    | None when id = Hashtbl.length dict ->
+                                w ^ (String.make 1 w.[0])
+                    | _ -> raise (Failure "bad compression")
                 in
-                let acc = acc ^
-                    (char
-                        |> insert id
-                        |> build
-                        |> add_next_char)
-                in
-                decode' acc tl
-        | _ -> raise (Failure "Unexpected token")
+                Hashtbl.add dict (Hashtbl.length dict) (w ^ (String.make 1 entry.[0]));
+
+                decode' entry (output ^ entry) tl
     in
-    decode' "" list
+    match input with
+    | [] -> ""
+    | hd :: tl ->
+            let w = String.make 1 @@ Char.chr @@ hd in
+            decode' w w tl
 
 let test_decode input expected =
-    let output = decode input in
+    let output = decompress input in
     let pass = output = expected in
     if not pass then print_endline output;
     pass
 
-let%test _ = test_decode [Id 0]                                                 ""
-let%test _ = test_decode [Id 0; Char 'a']                                       "a"
-let%test _ = test_decode [Id 0; Char 'a'; Id 1]                                 "aa"
-let%test _ = test_decode [Id 0; Char 'a'; Id 0; Char 'b'; Id 1]                 "aba"
-let%test _ = test_decode [Id 0; Char 'a'; Id 0; Char 'b'; Id 1; Char 'b']       "abab"
-let%test _ = test_decode [Id 0; Char 'a'; Id 0; Char 'b'; Id 2; Char 'a']       "abba"
-let%test _ = test_decode [Id 0; Char 'A'; Id 1; Char 'B'; Id 0; Char 'B'; Id 1] "AABBA"
+let%test _ = test_decode []                                                           ""
+let%test _ = test_decode [Char.code 'a']                                              "a"
+let%test _ = test_decode [Char.code 'a'; Char.code 'a']                               "aa"
+let%test _ = test_decode [Char.code 'a'; Char.code 'b'; Char.code 'a']                "aba"
+let%test _ = test_decode [Char.code 'a'; Char.code 'b'; 256]                          "abab"
+let%test _ = test_decode [Char.code 'a'; Char.code 'b'; Char.code 'b'; Char.code 'a'] "abba"
+let%test _ = test_decode 
+[Char.code 'A'; Char.code 'A'; Char.code 'B'; Char.code 'B'; Char.code 'A']
+"AABBA"
 
-let%test _ = ""      |> encode |> decode = ""
-let%test _ = "a"     |> encode |> decode = "a"
-let%test _ = "aa"    |> encode |> decode = "aa"
-let%test _ = "aba"   |> encode |> decode = "aba"
-let%test _ = "abab"  |> encode |> decode = "abab"
-let%test _ = "abba"  |> encode |> decode = "abba"
-let%test _ = "AABBA" |> encode |> decode = "AABBA"
-let%test _ = "AABBAABBA" |> encode |> decode = "AABBAABBA"
+let%test _ = ""      |> compress |> decompress = ""
+let%test _ = "a"     |> compress |> decompress = "a"
+let%test _ = "aa"    |> compress |> decompress = "aa"
+let%test _ = "aba"   |> compress |> decompress = "aba"
+let%test _ = "abab"  |> compress |> decompress = "abab"
+let%test _ = "abba"  |> compress |> decompress = "abba"
+let%test _ = "AABBA" |> compress |> decompress = "AABBA"
+let%test _ = "AABBAABBA" |> compress |> decompress = "AABBAABBA"
 
 let lorem_ipsum = "
 Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ac ut consequat semper viverra nam libero justo laoreet sit. Ante in nibh mauris cursus. Quam viverra orci sagittis eu volutpat odio facilisis mauris sit. Dui vivamus arcu felis bibendum ut tristique. Vitae auctor eu augue ut lectus arcu bibendum. Duis at consectetur lorem donec massa sapien faucibus et molestie. Ac tincidunt vitae semper quis lectus nulla at volutpat. Tempus egestas sed sed risus pretium quam vulputate. Luctus venenatis lectus magna fringilla urna porttitor. Sollicitudin nibh sit amet commodo. Facilisis mauris sit amet massa vitae tortor condimentum lacinia quis. Dolor sit amet consectetur adipiscing. Libero id faucibus nisl tincidunt eget. Auctor urna nunc id cursus metus aliquam eleifend mi in. Massa massa ultricies mi quis hendrerit dolor magna eget. Sed egestas egestas fringilla phasellus faucibus scelerisque eleifend donec pretium. Risus in hendrerit gravida rutrum quisque. Sed vulputate mi sit amet mauris commodo quis imperdiet massa. Ut lectus arcu bibendum at varius vel pharetra vel.
@@ -173,8 +135,8 @@ Pellentesque adipiscing commodo elit at imperdiet dui accumsan sit amet. Quis he
 Dui faucibus in ornare quam viverra orci sagittis eu volutpat. Volutpat lacus laoreet non curabitur gravida arcu ac tortor. Nunc mattis enim ut tellus. Sollicitudin ac orci phasellus egestas tellus rutrum tellus. In iaculis nunc sed augue lacus viverra vitae. Ut sem viverra aliquet eget sit. Ac tortor vitae purus faucibus. Ac orci phasellus egestas tellus rutrum tellus. Dictum varius duis at consectetur lorem donec massa. Eu consequat ac felis donec et. Phasellus faucibus scelerisque eleifend donec. Mauris pharetra et ultrices neque ornare aenean euismod. Leo duis ut diam quam nulla. Risus at ultrices mi tempus imperdiet. Vulputate eu scelerisque felis imperdiet.
 "
 
-let lorem_ipsum_encoded = encode lorem_ipsum
-let%test _ = decode lorem_ipsum_encoded = lorem_ipsum
+let lorem_ipsum_encoded = compress lorem_ipsum
+let%test _ = decompress lorem_ipsum_encoded = lorem_ipsum
 
 let () =
     let _ = test_encode lorem_ipsum [] in
@@ -182,4 +144,5 @@ let () =
     Format.printf "compression ratio: %f\n"
     @@ ((String.length lorem_ipsum |> Float.of_int)
      /. (List.length lorem_ipsum_encoded |> Float.of_int))
+
 
