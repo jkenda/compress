@@ -13,5 +13,6 @@
 (library
  (name lempel_ziv)
  (modules lempel_ziv)
+ (libraries tools)
  (inline_tests)
  (preprocess (pps ppx_inline_test)))

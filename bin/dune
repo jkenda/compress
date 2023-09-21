@@ -1,4 +1,13 @@
 (executable
  (public_name huffman)
- (name main)
- (libraries huffman lempel_ziv tools))
+ (name huffman)
+ (modules huffman)
+ (libraries huffman tools bitv))
+
+(executable
+ (public_name lz78)
+ (name lz78)
+ (modules lz78)
+ (libraries lempel_ziv tools)
+ (preprocess (pps ppx_inline_test)))
+

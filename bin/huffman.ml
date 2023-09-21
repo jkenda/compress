@@ -1,3 +1,7 @@
+open Huffman
+open Tools
+
+
 let bytes_for_bit a = (a + 7) / 8
 
 (* read file with filename and return string *)
@@ -27,7 +31,6 @@ let write_whole_file filename bytes =
  *)
 
 let bytes_to_huffman_encoded bytes =
-    let open Huffman in
     (* convert huffman code bitv to bytes *)
     let code_to_bytes code =
         let nbytes = bytes_for_bit (Bitv.length code) in
@@ -52,9 +55,6 @@ let bytes_to_huffman_encoded bytes =
     Buffer.to_bytes buffer
 
 let huffman_encoded_to_bytes bytes =
-    let open Huffman in
-    let open Tools in
-
     (* get size of dict *)
     let dict_size = Bytes.get_uint8 bytes 0 + 1 in
     (* get code from sequence of bytes *)
@@ -114,5 +114,10 @@ let () =
         in
         
         output
-            |> write_whole_file outfile
+            |> write_whole_file outfile;
+
+        Format.printf "input size: %d B, output size: %d B, ratio: %f\n"
+            (Bytes.length input)
+            (Bytes.length output)
+            (Float.of_int (Bytes.length input) /. Float.of_int (Bytes.length output));
 

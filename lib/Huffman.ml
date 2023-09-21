@@ -106,11 +106,7 @@ let encode message =
                 |> time "encode.huffman" huffman
                 |> time "encode.sort" List.sort (fun (_, c1) (_, c2) -> Bitv.length c1 - Bitv.length c2)
     in
-    let (bytes, _) as encoded = time "encode.to_code" to_code dict in
-    Format.printf "raw size: %d B, compressed size: %d B, compression ratio: %f\n"
-        (Bytes.length message)
-        (Bytes.length bytes)
-        (Float.of_int (Bytes.length message) /. Float.of_int (Bytes.length bytes));
+    let encoded = time "encode.to_code" to_code dict in
     (dict, encoded)
 
 (* decode huffman encoded message *)
