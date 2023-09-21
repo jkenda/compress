@@ -4,90 +4,91 @@ type seq = {
     ch : char
 }
 
-type lz =
+type token =
+    | Id of int
     | Char of char
-    | Seq of seq
 
 type node = { id : int; ch : char option; parent : node option; mutable children : node list }
 
-let encode string =
+let make_node parent id ch = {
+    id;
+    ch = Some ch;
+    parent = Some parent;
+    children = []
+}
+
+let encode input =
     let root = { id = 0; ch = None; parent = None; children = [] }
     and size = ref 1 in
 
+    (* find the longest substring already in the dict *)
     let find string i =
         let rec find' parent i len =
             let find_max ((_, max_len) as max) node =
                 let (_, len) as curr =
-                    if (try Some string.[i] with _ -> None) = node.ch then
+                    if try Some string.[i] = node.ch with _ -> false then
                         find' node (i + 1) (len + 1)
                     else if len = 0 then
                         find' node i len
-                    else (parent.id, len)
+                    else max
                 in
                 if len > max_len then curr else max
             in
-            List.fold_left find_max (parent.id, len) parent.children
+            List.fold_left find_max (parent, len) parent.children
         in
         find' root i 0
-
-    and insert id char =
-        let make char =
-            { id = !size; ch = Some char; parent = None; children = [] }
-        in
-        let rec insert' = function
-            | [] -> false
-            | node :: tl ->
-                if node.id = id then (
-                    node.children <- make char :: node.children;
-                    size := !size + 1;
-                    true)
-                else
-                    insert' node.children || insert' tl
-        in
-        let _ = insert' [root] in
-        ()
+    (* insert the new node into the dict *)
+    and insert_child node char =
+        node.children <- make_node node !size char :: node.children;
+        size := !size + 1
     in
 
     let rec encode' dict i =
-        if i >= String.length string then dict
+        if i >= String.length input then List.rev dict
         else
-            let (id, len) = find string i in
-            insert id string.[i];
+            let (node, len) = find input i in
+            insert_child node input.[i];
             let next_i = i + len in
-            let next_char = try String.make 1 string.[next_i] with _ -> "" in
-            encode' (dict ^ (Format.sprintf "%c%s" (Char.unsafe_chr id) next_char)) (next_i + 1)
+            let dict =
+                try Char input.[next_i] :: Id node.id :: dict
+                with Invalid_argument _ -> Id node.id :: dict
+            in
+            encode' dict (next_i + 1)
     in
-    if String.length string = 0 then "\x00"
-    else encode' "" 0
+    if String.length input = 0 then [Id 0]
+    else encode' [] 0
 
-let test_lz f input expected =
-    let output = f input in
+
+let test_encode input expected =
+    let rec print = function
+        | [] -> ()
+        | Id id :: tl -> print_int id; print tl
+        | Char ch :: tl -> print_char ch; print tl
+    in
+    let output = encode input in
     let pass = output = expected in
-    if not pass then print_endline output;
+    if not pass then (print output; print_newline ());
     pass
 
-let%test _ = test_lz encode "" "\x00"
-let%test _ = test_lz encode "a" "\x00a"
-let%test _ = test_lz encode "aa" "\x00a\x01"
-let%test _ = test_lz encode "aba" "\x00a\x00b\x01"
-let%test _ = test_lz encode "abab" "\x00a\x00b\x01b"
-let%test _ = test_lz encode "abba" "\x00a\x00b\x02a"
-let%test _ = test_lz encode "AABBA" "\x00A\x01B\x00B\x01"
+let%test _ = test_encode ""      [Id 0]
+let%test _ = test_encode "a"     [Id 0; Char 'a']
+let%test _ = test_encode "aa"    [Id 0; Char 'a'; Id 1]
+let%test _ = test_encode "aba"   [Id 0; Char 'a'; Id 0; Char 'b'; Id 1]
+let%test _ = test_encode "abab"  [Id 0; Char 'a'; Id 0; Char 'b'; Id 1; Char 'b']
+let%test _ = test_encode "abba"  [Id 0; Char 'a'; Id 0; Char 'b'; Id 2; Char 'a']
+let%test _ = test_encode "AABBA" [Id 0; Char 'A'; Id 1; Char 'B'; Id 0; Char 'B'; Id 1]
 
 
-let decode string =
+let decode list =
     let dict = { id = 0; ch = None; parent = None; children = [] }
     and size = ref 1 in
-    let make parent char =
-        { id = !size; ch = Some char; parent = Some parent; children = [] }
-    in
 
     let insert id char =
         let rec insert' = function
             | [] -> None
             | node :: tl ->
                 if node.id = id then (
-                    node.children <- make node char :: node.children;
+                    node.children <- make_node node !size char :: node.children;
                     size := !size + 1;
                     Some node)
                 else
@@ -105,30 +106,46 @@ let decode string =
         build' node ""
     in
 
-    let rec decode' i acc =
-        if i >= String.length string then acc
-        else
-            let (next_char, add_next_char) =
-                try (string.[i + 1], fun str -> str ^ String.make 1 string.[i + 1])
-                with _ -> ('$', fun str -> str)
-            in
-            acc ^
-            (next_char
-                    |> insert (Char.code string.[i]) 
-                    |> build
-                    |> add_next_char
-                    |> decode' (i + 2))
+    let rec decode' acc = function
+        | [] -> acc
+        | [Id id] -> acc ^ (insert id '$' |> build)
+        | Id id :: Char char :: tl ->
+                let add_next_char str =
+                     str ^ String.make 1 char
+                in
+                let acc = acc ^
+                    (char
+                        |> insert id
+                        |> build
+                        |> add_next_char)
+                in
+                decode' acc tl
+        | _ -> raise (Failure "Unexpected token")
     in
-    decode' 0 ""
+    decode' "" list
 
-let%test _ = test_lz decode "\x00" ""
-let%test _ = test_lz decode "\x00a" "a"
-let%test _ = test_lz decode "\x00a\x01" "aa"
-let%test _ = test_lz decode "\x00a\x00b\x01" "aba"
-let%test _ = test_lz decode "\x00a\x00b\x01b" "abab"
-let%test _ = test_lz decode "\x00a\x00b\x02a" "abba"
-let%test _ = test_lz decode "\x00A\x01B\x00B\x01" "AABBA"
+let test_decode input expected =
+    let output = decode input in
+    let pass = output = expected in
+    if not pass then print_endline output;
+    pass
 
+let%test _ = test_decode [Id 0]                                                 ""
+let%test _ = test_decode [Id 0; Char 'a']                                       "a"
+let%test _ = test_decode [Id 0; Char 'a'; Id 1]                                 "aa"
+let%test _ = test_decode [Id 0; Char 'a'; Id 0; Char 'b'; Id 1]                 "aba"
+let%test _ = test_decode [Id 0; Char 'a'; Id 0; Char 'b'; Id 1; Char 'b']       "abab"
+let%test _ = test_decode [Id 0; Char 'a'; Id 0; Char 'b'; Id 2; Char 'a']       "abba"
+let%test _ = test_decode [Id 0; Char 'A'; Id 1; Char 'B'; Id 0; Char 'B'; Id 1] "AABBA"
+
+let%test _ = ""      |> encode |> decode = ""
+let%test _ = "a"     |> encode |> decode = "a"
+let%test _ = "aa"    |> encode |> decode = "aa"
+let%test _ = "aba"   |> encode |> decode = "aba"
+let%test _ = "abab"  |> encode |> decode = "abab"
+let%test _ = "abba"  |> encode |> decode = "abba"
+let%test _ = "AABBA" |> encode |> decode = "AABBA"
+let%test _ = "AABBAABBA" |> encode |> decode = "AABBAABBA"
 
 let lorem_ipsum = "
 Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ac ut consequat semper viverra nam libero justo laoreet sit. Ante in nibh mauris cursus. Quam viverra orci sagittis eu volutpat odio facilisis mauris sit. Dui vivamus arcu felis bibendum ut tristique. Vitae auctor eu augue ut lectus arcu bibendum. Duis at consectetur lorem donec massa sapien faucibus et molestie. Ac tincidunt vitae semper quis lectus nulla at volutpat. Tempus egestas sed sed risus pretium quam vulputate. Luctus venenatis lectus magna fringilla urna porttitor. Sollicitudin nibh sit amet commodo. Facilisis mauris sit amet massa vitae tortor condimentum lacinia quis. Dolor sit amet consectetur adipiscing. Libero id faucibus nisl tincidunt eget. Auctor urna nunc id cursus metus aliquam eleifend mi in. Massa massa ultricies mi quis hendrerit dolor magna eget. Sed egestas egestas fringilla phasellus faucibus scelerisque eleifend donec pretium. Risus in hendrerit gravida rutrum quisque. Sed vulputate mi sit amet mauris commodo quis imperdiet massa. Ut lectus arcu bibendum at varius vel pharetra vel.
@@ -160,8 +177,9 @@ let lorem_ipsum_encoded = encode lorem_ipsum
 let%test _ = decode lorem_ipsum_encoded = lorem_ipsum
 
 let () =
-    print_endline @@ decode lorem_ipsum_encoded;
+    let _ = test_encode lorem_ipsum [] in
+    (* print_endline @@ decode lorem_ipsum_encoded; *)
     Format.printf "compression ratio: %f\n"
     @@ ((String.length lorem_ipsum |> Float.of_int)
-     /. (String.length lorem_ipsum_encoded |> Float.of_int))
+     /. (List.length lorem_ipsum_encoded |> Float.of_int))
 
