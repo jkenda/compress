@@ -7,7 +7,7 @@ let compress input =
         Hashtbl.add dict (String.make 1 (Char.chr i)) i
     done;
 
-    let rec encode' i w output =
+    let rec compress' i w output =
         if i >= String.length input then
             List.rev @@
                 if w = "" then output
@@ -17,13 +17,13 @@ let compress input =
             let wc = w ^ c in
             
             if Hashtbl.mem dict wc then
-                encode' (i + 1) wc output
+                compress' (i + 1) wc output
             else (
                 Hashtbl.add dict wc (Hashtbl.length dict);
-                encode' (i + 1) c (Hashtbl.find dict w :: output))
+                compress' (i + 1) c (Hashtbl.find dict w :: output))
     in
-    let compressed = encode' 0 "" [] in
-    (compressed, Hashtbl.length dict)
+    let compressed = compress' 0 "" [] in
+    (compressed, dict)
 
 
 let test_encode input expected =
@@ -62,7 +62,7 @@ let decompress input =
         Hashtbl.add dict i (string_of_char (Char.chr i))
     done;
 
-    let rec decode' w output = function
+    let rec decompress' w output = function
         | [] -> output
         | id :: tl ->
                 let entry =
@@ -74,13 +74,13 @@ let decompress input =
                 in
                 Hashtbl.add dict (Hashtbl.length dict) (w ^ (string_of_char entry.[0]));
 
-                decode' entry (output ^ entry) tl
+                decompress' entry (output ^ entry) tl
     in
     match input with
     | [] -> ""
     | hd :: tl ->
             let w = string_of_char @@ Char.chr @@ hd in
-            decode' w w tl
+            decompress' w w tl
 
 let test_decode input expected =
     let output = decompress input in

@@ -1,13 +1,18 @@
 (executable
- (public_name huffman)
- (name huffman)
- (modules huffman)
+ (public_name huf)
+ (name huf)
+ (modules huf)
  (libraries huffman tools bitv))
 
 (executable
  (public_name lz78)
  (name lz78)
  (modules lz78)
- (libraries lempel_ziv tools)
- (preprocess (pps ppx_inline_test)))
+ (libraries lempel_ziv tools))
+
+(executable
+ (public_name deflate)
+ (name deflate)
+ (modules deflate)
+ (libraries lempel_ziv huffman tools))
 

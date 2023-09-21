@@ -16,12 +16,12 @@ let write_whole_file filename bytes =
 
 
 let bytes_to_lz78_encoded bytes =
-    let (compressed, size) =
+    let (compressed, dict) =
         bytes
         |> Bytes.to_string
         |> compress
     in
-
+    let size = Hashtbl.length dict in
     let ent_size, f =
         if size <= 1 lsl 8 then 1, Buffer.add_uint8
         else if size <= 1 lsl 16 then 2, Buffer.add_uint16_be
@@ -72,9 +72,9 @@ let () =
     else
         let mode =
             match Sys.argv.(1) with
-            | "encode" -> Encode
-            | "decode" -> Decode
-            | _ -> raise (Failure "Usage: ./main <encode|decode> <infile> <outfile>")
+            | "compress" -> Encode
+            | "decompress" -> Decode
+            | _ -> raise (Failure "Usage: ./main <compress|decompress> <infile> <outfile>")
         in
 
         let infile = Sys.argv.(2) in
