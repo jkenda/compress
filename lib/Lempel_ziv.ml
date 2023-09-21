@@ -25,7 +25,8 @@ let compress input =
                 Hashtbl.add dict wc (Hashtbl.length dict);
                 encode' (i + 1) c (Hashtbl.find dict w :: output))
     in
-    encode' 0 "" []
+    let compressed = encode' 0 "" [] in
+    (compressed, Hashtbl.length dict)
 
 
 let test_encode input expected =
@@ -38,7 +39,7 @@ let test_encode input expected =
                     Format.printf "[%d]" id);
                 print tl
     in
-    let output = compress input in
+    let (output, _) = compress input in
     let pass = output = expected in
     if not pass then (print output; print_newline ());
     pass
@@ -100,14 +101,22 @@ let%test _ = test_decode
 [Char.code 'A'; Char.code 'A'; Char.code 'B'; Char.code 'B'; Char.code 'A']
 "AABBA"
 
-let%test _ = ""      |> compress |> decompress = ""
-let%test _ = "a"     |> compress |> decompress = "a"
-let%test _ = "aa"    |> compress |> decompress = "aa"
-let%test _ = "aba"   |> compress |> decompress = "aba"
-let%test _ = "abab"  |> compress |> decompress = "abab"
-let%test _ = "abba"  |> compress |> decompress = "abba"
-let%test _ = "AABBA" |> compress |> decompress = "AABBA"
-let%test _ = "AABBAABBA" |> compress |> decompress = "AABBAABBA"
+let test_both expected =
+    let (output, _) = compress expected in
+    let input = decompress output in
+    let pass = input = expected in
+    if not pass then print_endline input;
+    pass
+
+
+let%test _ = test_both ""
+let%test _ = test_both "a"
+let%test _ = test_both "aa"
+let%test _ = test_both "aba"
+let%test _ = test_both "abab"
+let%test _ = test_both "abba"
+let%test _ = test_both "AABBA"
+let%test _ = test_both "AABBAABBA"
 
 let lorem_ipsum = "
 Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ac ut consequat semper viverra nam libero justo laoreet sit. Ante in nibh mauris cursus. Quam viverra orci sagittis eu volutpat odio facilisis mauris sit. Dui vivamus arcu felis bibendum ut tristique. Vitae auctor eu augue ut lectus arcu bibendum. Duis at consectetur lorem donec massa sapien faucibus et molestie. Ac tincidunt vitae semper quis lectus nulla at volutpat. Tempus egestas sed sed risus pretium quam vulputate. Luctus venenatis lectus magna fringilla urna porttitor. Sollicitudin nibh sit amet commodo. Facilisis mauris sit amet massa vitae tortor condimentum lacinia quis. Dolor sit amet consectetur adipiscing. Libero id faucibus nisl tincidunt eget. Auctor urna nunc id cursus metus aliquam eleifend mi in. Massa massa ultricies mi quis hendrerit dolor magna eget. Sed egestas egestas fringilla phasellus faucibus scelerisque eleifend donec pretium. Risus in hendrerit gravida rutrum quisque. Sed vulputate mi sit amet mauris commodo quis imperdiet massa. Ut lectus arcu bibendum at varius vel pharetra vel.
@@ -135,13 +144,13 @@ Pellentesque adipiscing commodo elit at imperdiet dui accumsan sit amet. Quis he
 Dui faucibus in ornare quam viverra orci sagittis eu volutpat. Volutpat lacus laoreet non curabitur gravida arcu ac tortor. Nunc mattis enim ut tellus. Sollicitudin ac orci phasellus egestas tellus rutrum tellus. In iaculis nunc sed augue lacus viverra vitae. Ut sem viverra aliquet eget sit. Ac tortor vitae purus faucibus. Ac orci phasellus egestas tellus rutrum tellus. Dictum varius duis at consectetur lorem donec massa. Eu consequat ac felis donec et. Phasellus faucibus scelerisque eleifend donec. Mauris pharetra et ultrices neque ornare aenean euismod. Leo duis ut diam quam nulla. Risus at ultrices mi tempus imperdiet. Vulputate eu scelerisque felis imperdiet.
 "
 
-let lorem_ipsum_encoded = compress lorem_ipsum
+let (lorem_ipsum_encoded, dict_size) = compress lorem_ipsum
 let%test _ = decompress lorem_ipsum_encoded = lorem_ipsum
 
 let () =
     let _ = test_encode lorem_ipsum [] in
     (* print_endline @@ decode lorem_ipsum_encoded; *)
-    Format.printf "compression ratio: %f\n"
+    Format.printf "dict_size: %d compression ratio: %f\n" dict_size
     @@ ((String.length lorem_ipsum |> Float.of_int)
      /. (List.length lorem_ipsum_encoded |> Float.of_int))
 
