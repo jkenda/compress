@@ -16,12 +16,11 @@ let write_whole_file filename bytes =
 
 
 let bytes_to_lz78_encoded bytes =
-    let (compressed, dict) =
+    let (compressed, size) =
         bytes
         |> Bytes.to_string
         |> compress
     in
-    let size = Hashtbl.length dict in
     let ent_size, f =
         if size <= 1 lsl 8 then 1, Buffer.add_uint8
         else if size <= 1 lsl 16 then 2, Buffer.add_uint16_be

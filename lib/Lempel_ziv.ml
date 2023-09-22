@@ -7,23 +7,24 @@ let compress input =
         Hashtbl.add dict (String.make 1 (Char.chr i)) i
     done;
 
-    let rec compress' i w output =
-        if i >= String.length input then
+    let compress' (w, output) c =
+        let c = string_of_char c in
+        let wc = w ^ c in
+        
+        if Hashtbl.mem dict wc then
+            wc, output
+        else (
+            Hashtbl.add dict wc (Hashtbl.length dict);
+            c, (Hashtbl.find dict w :: output))
+    in
+    
+    let compressed =
+        let w, output = String.fold_left compress' ("", []) input in
             List.rev @@
                 if w = "" then output
                 else Hashtbl.find dict w :: output
-        else
-            let c = string_of_char input.[i] in
-            let wc = w ^ c in
-            
-            if Hashtbl.mem dict wc then
-                compress' (i + 1) wc output
-            else (
-                Hashtbl.add dict wc (Hashtbl.length dict);
-                compress' (i + 1) c (Hashtbl.find dict w :: output))
     in
-    let compressed = compress' 0 "" [] in
-    (compressed, dict)
+    compressed, Hashtbl.length dict
 
 
 let test_encode input expected =
@@ -62,25 +63,23 @@ let decompress input =
         Hashtbl.add dict i (string_of_char (Char.chr i))
     done;
 
-    let rec decompress' w output = function
-        | [] -> output
-        | id :: tl ->
-                let entry =
-                    match Hashtbl.find_opt dict id with
-                    | Some str -> str
-                    | None when id = Hashtbl.length dict ->
-                                w ^ (string_of_char w.[0])
-                    | _ -> raise (Failure "bad compression")
-                in
-                Hashtbl.add dict (Hashtbl.length dict) (w ^ (string_of_char entry.[0]));
-
-                decompress' entry (output ^ entry) tl
+    let decompress' (w, output) id =
+        let entry =
+            match Hashtbl.find_opt dict id with
+            | Some str -> str
+            | None when id = Hashtbl.length dict ->
+                        w ^ string_of_char w.[0]
+            | _ -> raise (Failure "bad compression")
+        in
+        Hashtbl.add dict (Hashtbl.length dict) (w ^ (string_of_char entry.[0]));
+        entry, output ^ entry
     in
     match input with
     | [] -> ""
     | hd :: tl ->
-            let w = string_of_char @@ Char.chr @@ hd in
-            decompress' w w tl
+            let w = string_of_char @@ Char.chr hd in
+            let _, output = List.fold_left decompress' (w, w) tl in
+            output
 
 let test_decode input expected =
     let output = decompress input in

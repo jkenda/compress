@@ -24,14 +24,13 @@ let deflate bytes =
         Bytes.sub bytes (Bytes.length bytes - nbytes) nbytes
     in
     (* compress with LZ78 *)
-    let (compressed, dict) =
+    let (compressed, size) =
         bytes
         |> Bytes.to_string
         |> Lempel_ziv.compress
     in
 
     (* calculate the size of entities *)
-    let size = Hashtbl.length dict in
     let ent_size, f =
         if size <= 1 lsl 8 then 1, Buffer.add_uint8
         else if size <= 1 lsl 16 then 2, Buffer.add_uint16_be
@@ -50,7 +49,7 @@ let deflate bytes =
         |> List.of_seq
     in
 
-    let dict, (bytes, len) = Huffman.compress List.length List.iter freqs ent_size compressed in
+    let dict, (bytes, len) = Huffman.compress List.length List.iter ent_size freqs compressed in
     let buffer = Buffer.create (len * 2) in
 
     (* add size of dict *)

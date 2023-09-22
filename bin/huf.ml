@@ -37,17 +37,9 @@ let bytes_to_huffman_encoded bytes =
         Bytes.sub bytes (Bytes.length bytes - nbytes) nbytes
     in
     (* calculate frequencies of characters *)
-    let freqs =
-        let array = Array.make 256 0 in
-        Bytes.iter (fun c -> array.(Char.code c) <- array.(Char.code c) + 1) bytes;
-        let rec aux = function
-            | 256 -> []
-            | n -> if array.(n) > 0 then (Char.chr n, array.(n)) :: aux (n + 1) else aux (n + 1)
-        in
-        aux 0
-    in
+    let freqs = freqs bytes in
 
-    let dict, (bytes, len) = compress Bytes.length Bytes.iter freqs 1 bytes in
+    let dict, (bytes, len) = compress Bytes.length Bytes.iter 1 freqs bytes in
     let buffer = Buffer.create (len * 2) in
 
     (* add size of dict *)

@@ -69,8 +69,17 @@ let%test _ = huffman [('a', 45); ('b', 13); ('c', 12); ('d', 16); ('e', 9); ('f'
 = [('a', bitv_of_string "0"); ('c', bitv_of_string "100"); ('b', bitv_of_string "101");
     ('f', bitv_of_string "1100"); ('e', bitv_of_string "1101"); ('d', bitv_of_string "111")]
 
+let freqs bytes =
+    let array = Array.make 256 0 in
+    Bytes.iter (fun c -> array.(Char.code c) <- array.(Char.code c) + 1) bytes;
+    let rec aux = function
+        | 256 -> []
+        | n -> if array.(n) > 0 then (Char.chr n, array.(n)) :: aux (n + 1) else aux (n + 1)
+    in
+    aux 0
+
 (* Encode mesage with huffman *)
-let compress len iter freqs ent_size message =
+let compress len iter ent_size freqs message =
     (* buffer for building strings *)
     let out_buffer = Bitv.create (len message * 8 * ent_size) false in
     let i = ref 0 in
@@ -96,7 +105,7 @@ let compress len iter freqs ent_size message =
         |> time "encode.sort" List.sort (fun (_, c1) (_, c2) -> Bitv.length c1 - Bitv.length c2)
     in
     let encoded = time "encode.to_code" to_code dict in
-    (dict, encoded)
+    dict, encoded
 
 (* decode huffman encoded message *)
 let decompress (dict, (bytes, len)) =
@@ -136,10 +145,10 @@ let decompress (dict, (bytes, len)) =
     time "decode.code_to_string" code_to_string 0;
     Buffer.to_bytes out_buffer
 
-let encode = compress Bytes.length Bytes.iter [] 1
-let%test _ = Bytes.of_string ""   |> encode |> decompress = Bytes.of_string ""
-let%test _ = Bytes.of_string "a"  |> encode |> decompress = Bytes.of_string "a"
-let%test _ = Bytes.of_string "aa" |> encode |> decompress = Bytes.of_string "aa"
+let compress_ = compress Bytes.length Bytes.iter 1
+let%test _ = Bytes.of_string ""   |> compress_ []       |> decompress = Bytes.of_string ""
+let%test _ = Bytes.of_string "a"  |> compress_ ['a', 1] |> decompress = Bytes.of_string "a"
+let%test _ = Bytes.of_string "aa" |> compress_ ['a', 2] |> decompress = Bytes.of_string "aa"
 
 let lorem_ipsum = Bytes.of_string "
 Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ac ut consequat semper viverra nam libero justo laoreet sit. Ante in nibh mauris cursus. Quam viverra orci sagittis eu volutpat odio facilisis mauris sit. Dui vivamus arcu felis bibendum ut tristique. Vitae auctor eu augue ut lectus arcu bibendum. Duis at consectetur lorem donec massa sapien faucibus et molestie. Ac tincidunt vitae semper quis lectus nulla at volutpat. Tempus egestas sed sed risus pretium quam vulputate. Luctus venenatis lectus magna fringilla urna porttitor. Sollicitudin nibh sit amet commodo. Facilisis mauris sit amet massa vitae tortor condimentum lacinia quis. Dolor sit amet consectetur adipiscing. Libero id faucibus nisl tincidunt eget. Auctor urna nunc id cursus metus aliquam eleifend mi in. Massa massa ultricies mi quis hendrerit dolor magna eget. Sed egestas egestas fringilla phasellus faucibus scelerisque eleifend donec pretium. Risus in hendrerit gravida rutrum quisque. Sed vulputate mi sit amet mauris commodo quis imperdiet massa. Ut lectus arcu bibendum at varius vel pharetra vel.
@@ -169,5 +178,5 @@ Dui faucibus in ornare quam viverra orci sagittis eu volutpat. Volutpat lacus la
 Commodo odio aenean sed adipiscing diam donec adipiscing tristique. A arcu cursus vitae congue mauris rhoncus aenean vel elit. Nullam non nisi est sit amet facilisis. Egestas tellus rutrum tellus pellentesque eu tincidunt tortor. Aliquet nibh praesent tristique magna sit amet. Lobortis elementum nibh tellus molestie nunc non blandit. Porttitor eget dolor morbi non arcu risus quis varius. Id diam maecenas ultricies mi eget mauris pharetra et. Arcu cursus vitae congue mauris rhoncus. Convallis aenean et tortor at risus viverra adipiscing at in. Ac tincidunt vitae semper quis lectus nulla at volutpat diam. Convallis convallis tellus id interdum velit laoreet id.
 ";;
 
-let%test _ = lorem_ipsum |> encode |> decompress = lorem_ipsum
+let%test _ = lorem_ipsum |> compress_ (freqs lorem_ipsum) |> decompress = lorem_ipsum
 
