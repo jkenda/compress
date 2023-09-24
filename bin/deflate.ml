@@ -92,19 +92,22 @@ let inflate bytes =
 
 
 type mode =
-    | Encode
-    | Decode
+    | Compress
+    | Decompress
+
+let usage_err =
+    Failure (Format.sprintf "Usage: %s <compress|decompress> <infile> <outfile>" Sys.argv.(0))
 
 let () =
     let open Tools in
     if Array.length Sys.argv < 4 then
-        raise (Failure "Usage: ./main <encode|decode> <infile> <outfile>")
+        raise usage_err
     else
         let mode =
             match Sys.argv.(1) with
-            | "compress" -> Encode
-            | "decompress" -> Decode
-            | _ -> raise (Failure "Usage: ./main <compress|decompress> <infile> <outfile>")
+            | "compress" -> Compress
+            | "decompress" -> Decompress
+            | _ -> raise usage_err
         in
 
         let infile = Sys.argv.(2) in
@@ -113,8 +116,8 @@ let () =
 
         let output =
             match mode with
-            | Encode -> time "lz78" deflate input
-            | Decode -> time "decode" inflate input
+            | Compress -> time "lz78" deflate input
+            | Decompress -> time "decode" inflate input
         in
         
         output

@@ -1,21 +1,34 @@
 let string_of_char char =
     String.make 1 char
 
-let compress input =
-    let dict = Hashtbl.create 256 in
-    for i = 0 to 255 do
+let byte_limit = 256
+
+let make_dict () =
+    let dict = Hashtbl.create byte_limit in
+    for i = 0 to byte_limit - 1 do
         Hashtbl.add dict (String.make 1 (Char.chr i)) i
     done;
+    dict
+
+let make_dict' () =
+    let dict = Hashtbl.create byte_limit in
+    for i = 0 to byte_limit - 1 do
+        Hashtbl.add dict i (string_of_char (Char.chr i))
+    done;
+    dict
+
+let compress input =
+    let dict = make_dict () in
 
     let compress' (w, output) c =
-        let c = string_of_char c in
-        let wc = w ^ c in
+        let cs = string_of_char c in
+        let wc = w ^ cs in
         
         if Hashtbl.mem dict wc then
             wc, output
         else (
             Hashtbl.add dict wc (Hashtbl.length dict);
-            c, (Hashtbl.find dict w :: output))
+            cs, (Hashtbl.find dict w :: output))
     in
     
     let compressed =
@@ -31,7 +44,7 @@ let test_encode input expected =
     let rec print = function
         | [] -> ()
         | id :: tl ->
-                (if id < 256 then
+                (if id < byte_limit then
                     print_char @@ Char.chr id
                 else
                     Format.printf "[%d]" id);
@@ -39,7 +52,7 @@ let test_encode input expected =
     in
     let (output, _) = compress input in
     let pass = output = expected in
-    if not pass then (print output; print_newline ());
+    if not pass then (print output; Format.printf "\n");
     pass
 
 let%test _ = test_encode ""         []
@@ -48,6 +61,9 @@ let%test _ = test_encode "aa"       [Char.code 'a'; Char.code 'a']
 let%test _ = test_encode "aba"      [Char.code 'a'; Char.code 'b'; Char.code 'a']
 let%test _ = test_encode "abab"     [Char.code 'a'; Char.code 'b'; 256]
 let%test _ = test_encode "abba"     [Char.code 'a'; Char.code 'b'; Char.code 'b'; Char.code 'a']
+
+let%test _ = test_encode "až"
+(String.to_seq "až" |> List.of_seq |> List.map (fun x -> Char.code x))
 
 let%test _ = test_encode "AABBA" 
 [Char.code 'A'; Char.code 'A'; Char.code 'B'; Char.code 'B'; Char.code 'A']
@@ -58,20 +74,18 @@ let%test _ = test_encode "AABBAABB"
 
 
 let decompress input =
-    let dict = Hashtbl.create 256 in
-    for i = 0 to 255 do
-        Hashtbl.add dict i (string_of_char (Char.chr i))
-    done;
+    let dict = make_dict' () in
 
-    let decompress' (w, output) id =
+    let decompress' (w, output) code =
         let entry =
-            match Hashtbl.find_opt dict id with
+            match Hashtbl.find_opt dict code with
             | Some str -> str
-            | None when id = Hashtbl.length dict ->
+            | None when code = Hashtbl.length dict ->
                         w ^ string_of_char w.[0]
             | _ -> raise (Failure "bad compression")
         in
-        Hashtbl.add dict (Hashtbl.length dict) (w ^ (string_of_char entry.[0]));
+        let code = Hashtbl.length dict in
+        Hashtbl.add dict code (w ^ (string_of_char entry.[0]));
         entry, output ^ entry
     in
     match input with
@@ -93,6 +107,11 @@ let%test _ = test_decode [Char.code 'a'; Char.code 'a']                         
 let%test _ = test_decode [Char.code 'a'; Char.code 'b'; Char.code 'a']                "aba"
 let%test _ = test_decode [Char.code 'a'; Char.code 'b'; 256]                          "abab"
 let%test _ = test_decode [Char.code 'a'; Char.code 'b'; Char.code 'b'; Char.code 'a'] "abba"
+
+let%test _ = test_decode
+(String.to_seq "až" |> List.of_seq |> List.map (fun x -> Char.code x))
+"až"
+
 let%test _ = test_decode 
 [Char.code 'A'; Char.code 'A'; Char.code 'B'; Char.code 'B'; Char.code 'A']
 "AABBA"
@@ -113,6 +132,8 @@ let%test _ = test_both "abab"
 let%test _ = test_both "abba"
 let%test _ = test_both "AABBA"
 let%test _ = test_both "AABBAABBA"
+let%test _ = test_both "až"
+let%test _ = test_both "0 = ∞; ∞ = 0"
 
 open Tools
 
