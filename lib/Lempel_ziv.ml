@@ -8,13 +8,19 @@ let make_dict () =
     for i = 0 to byte_limit - 1 do
         Hashtbl.add dict (String.make 1 (Char.chr i)) i
     done;
+    Hashtbl.add dict "č" (Hashtbl.length dict);
+    Hashtbl.add dict "š" (Hashtbl.length dict);
+    Hashtbl.add dict "ž" (Hashtbl.length dict);
+    Hashtbl.add dict "Č" (Hashtbl.length dict);
+    Hashtbl.add dict "Š" (Hashtbl.length dict);
+    Hashtbl.add dict "Ž" (Hashtbl.length dict);
+
     dict
 
 let make_dict' () =
     let dict = Hashtbl.create byte_limit in
-    for i = 0 to byte_limit - 1 do
-        Hashtbl.add dict i (string_of_char (Char.chr i))
-    done;
+    make_dict ()
+    |> Hashtbl.iter (fun seq code -> Hashtbl.add dict code seq);
     dict
 
 let compress input =
