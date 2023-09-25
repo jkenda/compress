@@ -4,23 +4,30 @@ let string_of_char char =
 let byte_limit = 256
 
 let make_dict () =
-    let dict = Hashtbl.create byte_limit in
+    let open Hashtbl in
+    let dict = create byte_limit in
     for i = 0 to byte_limit - 1 do
-        Hashtbl.add dict (String.make 1 (Char.chr i)) i
+        add dict (String.make 1 (Char.chr i)) i
     done;
-    Hashtbl.add dict "č" (Hashtbl.length dict);
-    Hashtbl.add dict "š" (Hashtbl.length dict);
-    Hashtbl.add dict "ž" (Hashtbl.length dict);
-    Hashtbl.add dict "Č" (Hashtbl.length dict);
-    Hashtbl.add dict "Š" (Hashtbl.length dict);
-    Hashtbl.add dict "Ž" (Hashtbl.length dict);
+    add dict "č" (length dict);
+    add dict "š" (length dict);
+    add dict "ž" (length dict);
+    add dict "Č" (length dict);
+    add dict "Š" (length dict);
+    add dict "Ž" (length dict);
+
+    add dict "th" (length dict);
+    add dict "he" (length dict);
+    add dict "in" (length dict);
+    add dict "er" (length dict);
 
     dict
 
 let make_dict' () =
-    let dict = Hashtbl.create byte_limit in
+    let open Hashtbl in
+    let dict = create byte_limit in
     make_dict ()
-    |> Hashtbl.iter (fun seq code -> Hashtbl.add dict code seq);
+    |> iter (fun seq code -> add dict code seq);
     dict
 
 let compress input =
