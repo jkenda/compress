@@ -1,18 +1,5 @@
 open Lempel_ziv
-
-(* read file with filename and return string *)
-let read_whole_file filename =
-    (* open_in_bin works correctly on Unix and Windows *)
-    let ch = open_in_bin filename in
-    let s = really_input_string ch (in_channel_length ch) in
-    close_in ch;
-    String.to_bytes s
-
-(* write whole string to the file with filename *)
-let write_whole_file filename bytes =
-    let ch = open_out_bin filename in
-    output_bytes ch bytes;
-    close_out ch
+open Tools
 
 let (<<) a b = a lsl b
 let (>>) a b = a lsr b
@@ -31,8 +18,7 @@ let code_limit = function
     | N4 -> 32 - 3
     | N8 -> 64 - 3
 
-
-let compress bytes =
+let compress input =
     (* encode code length with first few bits *)
     let len_bits = function
         | N1 -> 0b0   << (code_limit N1)
@@ -42,22 +28,31 @@ let compress bytes =
     in
 
     (* compress the string *)
-    let compressed, size =
-        bytes
+    let compressed, _ =
+        input
         |> Bytes.to_string
         |> compress
     in
     (* create buffer *)
-    let buffer = Buffer.create (size * 3) in
+    let buffer = Buffer.create @@ Bytes.length input in
 
     (* add next code to buffer *)
     let add_to_buffer code =
         (* decide how many bytes should represent the code *)
-        let nbytes =
-            if      code < (1 << code_limit N1) then N1
-            else if code < (1 << code_limit N2) then N2
-            else if code < (1 << code_limit N4) then N4
-            else N8
+        let nbytes, code =
+            if code < (1 << code_limit N1) then
+                N1, code
+            else
+                (*let code = code - code_limit N1 in*)
+                if code < (1 << code_limit N2) then
+                    N2, code
+                else
+                    (*let code = code - code_limit N2 in*)
+                    if code < (1 << code_limit N4) then
+                        N4, code
+                    else
+                        (*let code = code - code_limit N4 in*)
+                        N8, code
         in
         (* add length info to code, choose add' function based on nbytes *)
         let code, add' =
@@ -65,8 +60,14 @@ let compress bytes =
             match nbytes with
             | N1 -> code $ len_bits N1, add_uint8
             | N2 -> code $ len_bits N2, add_uint16_be
-            | N4 -> code $ len_bits N4, fun buf x -> Int32.of_int x |> add_int32_be buf
-            | N8 -> code $ len_bits N8, fun buf x -> Int64.of_int x |> add_int64_be buf
+            | N4 -> code $ len_bits N4, fun buf x ->
+                    add_uint16_be buf (x >> 16 & (1 << 16 - 1));
+                    add_uint16_be buf (x >>  0 & (1 << 16 - 1));
+            | N8 -> code $ len_bits N8, fun buf x ->
+                    add_uint16_be buf (x >> 48 & (1 << 16 - 1));
+                    add_uint16_be buf (x >> 32 & (1 << 16 - 1));
+                    add_uint16_be buf (x >> 16 & (1 << 16 - 1));
+                    add_uint16_be buf (x >>  0 & (1 << 16 - 1));
         in
         add' buffer code
     in
@@ -93,15 +94,28 @@ let decompress bytes =
                 let byte = Bytes.get_uint8 bytes i in
                 if byte >> (8 - 1) = 0b0 then 1, byte
                 else
-                    let nbytes, mask, get' =
-                        if byte >> (8 - 2) = 0b10 then
-                            2, mask N2, Bytes.get_uint16_be
-                        else if byte >> (8 - 3) = 0b110 then
-                            4, mask N4, fun buf x -> Bytes.get_int32_be buf x |> Int32.to_int
-                        else
-                            8, mask N8, fun buf x -> Bytes.get_int64_be buf x |> Int64.to_int
+                    let nbytes, mask =
+                        if byte >> (8 - 2) = 0b10 then 2, mask N2
+                        else if byte >> (8 - 3) = 0b110 then 4, mask N4
+                        else 8, mask N8
                     in
-                    nbytes, get' bytes i & mask
+                    let get' =
+                        match nbytes with
+                        | 2 -> Bytes.get_uint16_be
+                        | 4 -> fun buf x ->
+                                Bytes.get_uint16_be buf x << 16 $
+                                Bytes.get_uint16_be buf (x + 1)
+                        | _ -> fun buf x ->
+                                Bytes.get_uint16_be buf (x + 0) << 48 $
+                                Bytes.get_uint16_be buf (x + 1) << 32 $
+                                Bytes.get_uint16_be buf (x + 2) << 16 $
+                                Bytes.get_uint16_be buf (x + 3)
+                    in
+                    let code = get' bytes i & mask in
+                    nbytes, match nbytes with
+                    | 2 -> code(* + code_limit N1*)
+                    | 4 -> code(* + code_limit N1 + code_limit N2*)
+                    | _ -> code(* + code_limit N1 + code_limit N2 + code_limit N4*)
             in
             build_list (i + nbytes)
             @@ code :: acc
@@ -117,7 +131,6 @@ type mode =
     | Decompress
 
 let () =
-    let open Tools in
     let usage_err =
         Failure (Format.sprintf "Usage: %s <compress|decompress> <infile> <outfile>" Sys.argv.(0))
     in

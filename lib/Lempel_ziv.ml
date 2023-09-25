@@ -82,7 +82,7 @@ let decompress input =
             | Some str -> str
             | None when code = Hashtbl.length dict ->
                         w ^ string_of_char w.[0]
-            | _ -> raise (Failure "bad compression")
+            | _ -> raise @@ Failure ("Bad compression: " ^ string_of_int code)
         in
         let code = Hashtbl.length dict in
         Hashtbl.add dict code (w ^ (string_of_char entry.[0]));

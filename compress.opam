@@ -7,7 +7,6 @@ authors: ["Jakob Kenda"]
 license: "MIT"
 tags: ["compression" "huffman" "lz77" "deflate"]
 homepage: "https://github.com/jkenda/compress"
-doc: "https://url/to/documentation"
 bug-reports: "https://github.com/jkenda/compress/issues"
 depends: [
   "ocaml"

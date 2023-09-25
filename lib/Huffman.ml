@@ -62,12 +62,13 @@ let huffman freqs =
         |> List.map (fun (char, freq) -> Leaf (freq, char))
         |> build_tree
         |> to_huffman
+        |> List.sort (fun (_, c1) (_, c2) -> Bitv.length c1 - Bitv.length c2)
 
 let%test _ = huffman [] = []
 let%test _ = huffman [('x', 1)] = [('x', bitv_of_string "0")]
 let%test _ = huffman [('a', 45); ('b', 13); ('c', 12); ('d', 16); ('e', 9); ('f', 5)]
 = [('a', bitv_of_string "0"); ('c', bitv_of_string "100"); ('b', bitv_of_string "101");
-    ('f', bitv_of_string "1100"); ('e', bitv_of_string "1101"); ('d', bitv_of_string "111")]
+    ('d', bitv_of_string "111"); ('f', bitv_of_string "1100"); ('e', bitv_of_string "1101")]
 
 let freqs bytes =
     let array = Array.make 256 0 in
@@ -79,7 +80,7 @@ let freqs bytes =
     aux 0
 
 (* Encode mesage with huffman *)
-let compress len iter ent_size freqs message =
+let compress len iter ent_size dict message =
     (* buffer for building strings *)
     let out_buffer = Bitv.create (len message * 8 * ent_size) false in
     let i = ref 0 in
@@ -100,10 +101,6 @@ let compress len iter ent_size freqs message =
         (Bitv.sub out_buffer 0 !i |> Bitv.to_bytes), !i
     in
 
-    let dict = freqs
-        |> time "encode.huffman" huffman
-        |> time "encode.sort" List.sort (fun (_, c1) (_, c2) -> Bitv.length c1 - Bitv.length c2)
-    in
     let encoded = time "encode.to_code" to_code dict in
     dict, encoded
 
@@ -147,11 +144,11 @@ let decompress (dict, (bytes, len)) =
 
 let compress_ = compress Bytes.length Bytes.iter 1
 let%test _ = Bytes.of_string ""   |> compress_ []       |> decompress = Bytes.of_string ""
-let%test _ = Bytes.of_string "a"  |> compress_ ['a', 1] |> decompress = Bytes.of_string "a"
-let%test _ = Bytes.of_string "aa" |> compress_ ['a', 2] |> decompress = Bytes.of_string "aa"
+let%test _ = Bytes.of_string "a"  |> compress_ ['a', bitv_of_int 0 1] |> decompress = Bytes.of_string "a"
+let%test _ = Bytes.of_string "aa" |> compress_ ['a', bitv_of_int 0 1] |> decompress = Bytes.of_string "aa"
 
 let%test _ =
     let open Tools in
     let lorem_ipsum = Bytes.of_string lorem_ipsum in
-    lorem_ipsum |> compress_ (freqs lorem_ipsum) |> decompress = lorem_ipsum
+    lorem_ipsum |> compress_ (huffman @@ freqs lorem_ipsum) |> decompress = lorem_ipsum
 

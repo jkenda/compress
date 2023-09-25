@@ -1,20 +1,4 @@
-
-let bytes_for_bit a = (a + 7) / 8
-
-(* read file with filename and return string *)
-let read_whole_file filename =
-    (* open_in_bin works correctly on Unix and Windows *)
-    let ch = open_in_bin filename in
-    let s = really_input_string ch (in_channel_length ch) in
-    close_in ch;
-    String.to_bytes s
-
-(* write whole string to the file with filename *)
-let write_whole_file filename bytes =
-    let ch = open_out_bin filename in
-    output_bytes ch bytes;
-    close_out ch
-
+open Tools
 
 let deflate bytes =
     (* convert huffman code bitv to bytes *)
@@ -24,7 +8,7 @@ let deflate bytes =
         Bytes.sub bytes (Bytes.length bytes - nbytes) nbytes
     in
     (* compress with LZ78 *)
-    let (compressed, size) =
+    let compressed, size =
         bytes
         |> Bytes.to_string
         |> Lempel_ziv.compress
@@ -48,8 +32,9 @@ let deflate bytes =
         |> Hashtbl.to_seq
         |> List.of_seq
     in
+    let dict = Huffman.huffman freqs in
 
-    let dict, (bytes, len) = Huffman.compress List.length List.iter ent_size freqs compressed in
+    let dict, (bytes, len) = Huffman.compress List.length List.iter ent_size dict compressed in
     let buffer = Buffer.create (len * 2) in
 
     (* add size of dict *)

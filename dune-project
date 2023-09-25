@@ -13,8 +13,6 @@
 
 (license MIT)
 
-(documentation https://url/to/documentation)
-
 (package
  (name compress)
  (synopsis "A simple compression tool")
